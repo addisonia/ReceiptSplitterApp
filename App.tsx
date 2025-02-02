@@ -1,34 +1,61 @@
 // App.tsx
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { registerRootComponent } from 'expo';
 import { NavigationContainer } from '@react-navigation/native';
-import { createNativeStackNavigator } from '@react-navigation/native-stack';
-import Main from './src/index';
+import { createMaterialTopTabNavigator } from '@react-navigation/material-top-tabs';
+import * as Font from 'expo-font';
+import { View, ActivityIndicator, StatusBar, SafeAreaView } from 'react-native';
 import Home from './src/screens/Home';
 import Split from './src/screens/Split';
 
-export type RootStackParamList = {
-  Home: undefined;
-  Split: undefined;
+const Tab = createMaterialTopTabNavigator();
+
+const colors = {
+  yuck: '#5c540b',
 };
 
-const Stack = createNativeStackNavigator<RootStackParamList>();
+function App() {
+  const [fontsLoaded, setFontsLoaded] = useState(false);
 
-export default function App() {
+  useEffect(() => {
+    async function loadFonts() {
+      await Font.loadAsync({
+        'Tenorite': require('./assets/fonts/Tenorite.ttf'),
+        'Tenorite-Bold': require('./assets/fonts/Tenorite_B.ttf'),
+        'Tenorite-Italic': require('./assets/fonts/Tenorite_I.ttf'),
+        'Tenorite-BoldItalic': require('./assets/fonts/Tenorite_BI.ttf'),
+      });
+      setFontsLoaded(true);
+    }
+    loadFonts();
+  }, []);
+
+  if (!fontsLoaded) {
+    return (
+      <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
+        <ActivityIndicator size="large" />
+      </View>
+    );
+  }
+
   return (
-    <NavigationContainer>
-      <Stack.Navigator initialRouteName="Home">
-        <Stack.Screen
-          name="Home"
-          component={Home}
-          options={{ headerShown: false }}
-        />
-        <Stack.Screen
-          name="Split"
-          component={Split}
-          options={{ headerShown: false }}
-        />
-      </Stack.Navigator>
-    </NavigationContainer>
+    <SafeAreaView style={{ flex: 1, backgroundColor: colors.yuck }}>
+      <StatusBar backgroundColor={colors.yuck} barStyle="light-content" />
+      <NavigationContainer>
+        <Tab.Navigator
+          screenOptions={{
+            swipeEnabled: true,
+            tabBarStyle: { display: 'none' }, // hide the tab bar
+          }}
+        >
+          <Tab.Screen name="Home" component={Home} />
+          <Tab.Screen name="Split" component={Split} />
+        </Tab.Navigator>
+      </NavigationContainer>
+    </SafeAreaView>
   );
 }
+
+registerRootComponent(App);
+
+export default App;

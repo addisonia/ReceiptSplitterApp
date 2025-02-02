@@ -1,6 +1,6 @@
-// app/screens/Split.tsx
 import React from 'react';
-import { View, Text, StyleSheet } from 'react-native';
+import { View, StyleSheet } from 'react-native';
+import AppText from '../../components/AppText'; // Import AppText
 
 const colors = {
   yuck: '#5c540b',
@@ -12,7 +12,7 @@ const colors = {
 const Split = () => {
   return (
     <View style={styles.container}>
-      <Text style={styles.text}>Split Page (coming soon)</Text>
+      <AppText style={styles.text}>Split Page (coming soon)</AppText>
     </View>
   );
 };

@@ -1,32 +1,48 @@
-// app/index.tsx
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { NavigationContainer } from '@react-navigation/native';
-import { createNativeStackNavigator } from '@react-navigation/native-stack';
+import { createMaterialTopTabNavigator } from '@react-navigation/material-top-tabs';
+import * as Font from 'expo-font';
+import { View, ActivityIndicator } from 'react-native';
 import Home from './screens/Home';
 import Split from './screens/Split';
 
-type RootStackParamList = {
-  Home: undefined;
-  Split: undefined;
-};
+const Tab = createMaterialTopTabNavigator();
 
-const Stack = createNativeStackNavigator<RootStackParamList>();
+export default function AppNavigator() {
+  const [fontsLoaded, setFontsLoaded] = useState(false);
 
-export default function App() {
+  useEffect(() => {
+    async function loadFonts() {
+      await Font.loadAsync({
+        'Tenorite': require('../assets/fonts/Tenorite.ttf'),
+        'Tenorite-Bold': require('../assets/fonts/Tenorite_B.ttf'),
+      });
+      setFontsLoaded(true);
+    }
+    loadFonts();
+  }, []);
+
+  if (!fontsLoaded) {
+    return (
+      <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
+        <ActivityIndicator size="large" />
+      </View>
+    );
+  }
+
   return (
     <NavigationContainer>
-      <Stack.Navigator initialRouteName="Home">
-        <Stack.Screen 
-          name="Home" 
-          component={Home} 
-          options={{ headerShown: false }}
-        />
-        <Stack.Screen 
-          name="Split" 
-          component={Split} 
-          options={{ headerShown: false }}
-        />
-      </Stack.Navigator>
+      <Tab.Navigator
+        screenOptions={{
+          swipeEnabled: true,
+          tabBarLabelStyle: { fontSize: 16 },
+          tabBarIndicatorStyle: { backgroundColor: '#000' },
+          tabBarStyle: { backgroundColor: '#fff' },
+        }}
+      >
+        <Tab.Screen name="Home" component={Home} />
+        <Tab.Screen name="Split" component={Split} />
+      </Tab.Navigator>
     </NavigationContainer>
   );
 }

@@ -1,49 +1,44 @@
-// app/screens/Home.tsx
 import React from 'react';
-import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
-import { FontAwesome5 } from '@expo/vector-icons'; // using expo vector icons
+import { View, StyleSheet, TouchableOpacity, Dimensions } from 'react-native';
+import AppText from '../../components/AppText';
+import { FontAwesome5 } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../types/RootStackParams';
 import colors from '../../constants/colors';
+
 type HomeScreenNavigationProp = NativeStackNavigationProp<RootStackParamList, 'Home'>;
 
+const screenWidth = Dimensions.get('window').width;
+const screenHeight = Dimensions.get('window').height;
+const buttonWidth = screenWidth * 0.5;
+const buttonHeight = buttonWidth / 2;
 
 const Home = () => {
   const navigation = useNavigation<HomeScreenNavigationProp>();
 
-  // function to navigate to the split page
   const handleStartSplitting = () => {
     navigation.navigate('Split');
   };
 
   return (
     <View style={styles.container}>
-      {/* top row with icons */}
       <View style={styles.iconRow}>
         <TouchableOpacity style={styles.iconButton}>
-          {/* gamepad icon */}
           <FontAwesome5 name="gamepad" size={24} color={colors.yellow} />
         </TouchableOpacity>
-        <TouchableOpacity style={styles.iconButton}>
-          {/* book icon */}
-          <FontAwesome5 name="book" size={24} color={colors.yellow} />
-        </TouchableOpacity>
-        <TouchableOpacity style={styles.iconButton}>
-          {/* shield icon */}
-          <FontAwesome5 name="shield-alt" size={24} color={colors.yellow} />
-        </TouchableOpacity>
       </View>
 
-      {/* middle with title text */}
-      <View style={styles.content}>
-        <Text style={styles.title}>Receipt Splitter</Text>
+      <View style={styles.titleContainer}>
+        <AppText style={[styles.title, styles.boldText]}>Receipt</AppText>
+        <AppText style={[styles.title, styles.titleSpacing, styles.boldText]}>
+          Splitter
+        </AppText>
       </View>
 
-      {/* bottom with start button */}
       <View style={styles.bottom}>
         <TouchableOpacity style={styles.startButton} onPress={handleStartSplitting}>
-          <Text style={styles.buttonText}>Start Splitting</Text>
+          <AppText style={styles.buttonText}>Start Splitting</AppText>
         </TouchableOpacity>
       </View>
     </View>
@@ -57,36 +52,51 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: colors.yuck,
     alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingVertical: 40,
+    justifyContent: 'center',
   },
   iconRow: {
-    flexDirection: 'row',
-    justifyContent: 'center',
-    marginTop: 20,
-  },
-  iconButton: {
-    marginHorizontal: 30,
-  },
-  content: {
-    flex: 1,
-    justifyContent: 'center',
-  },
-  title: {
-    fontSize: 32,
-    color: 'white',
-    textAlign: 'center',
-  },
-  bottom: {
+    position: 'absolute',
+    top: 40,
     width: '100%',
     alignItems: 'center',
-    marginBottom: 40,
+  },
+  iconButton: {
+    top: 10,
+  },
+  titleContainer: {
+    position: 'absolute',
+    top: screenHeight * 0.25,
+    left: 0,
+    right: 0,
+    alignItems: 'center',
+    zIndex: 10,
+  },
+  title: {
+    fontSize: 50,
+    color: 'white',
+    textAlign: 'center',
+    fontWeight: 'bold'
+  },
+  titleSpacing: {
+    marginTop: 20,
+  },
+  boldText: {
+    fontWeight: 'bold', // This will trigger the bold font in AppText.tsx
+  },
+  bottom: {
+    position: 'absolute',
+    bottom: screenWidth / 4,
+    width: '100%',
+    alignItems: 'center',
+    zIndex: 5,
   },
   startButton: {
     backgroundColor: colors.yellow,
-    paddingVertical: 15,
-    paddingHorizontal: 40,
+    width: buttonWidth,
+    height: buttonHeight,
     borderRadius: 5,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   buttonText: {
     fontSize: 24,
