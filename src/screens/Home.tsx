@@ -1,5 +1,5 @@
-import React from 'react';
-import { View, StyleSheet, TouchableOpacity, Dimensions } from 'react-native';
+import React, { useState } from 'react';
+import { View, StyleSheet, Pressable, Dimensions } from 'react-native';
 import AppText from '../../components/AppText';
 import { FontAwesome5 } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
@@ -7,7 +7,10 @@ import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../types/RootStackParams';
 import colors from '../../constants/colors';
 
-type HomeScreenNavigationProp = NativeStackNavigationProp<RootStackParamList, 'Home'>;
+type HomeScreenNavigationProp = NativeStackNavigationProp<
+  RootStackParamList,
+  'Home'
+>;
 
 const screenWidth = Dimensions.get('window').width;
 const screenHeight = Dimensions.get('window').height;
@@ -17,18 +20,61 @@ const buttonHeight = buttonWidth / 2;
 const Home = () => {
   const navigation = useNavigation<HomeScreenNavigationProp>();
 
+  // icon states
+  const [gameIconColor, setGameIconColor] = useState(colors.yellow);
+  const [userIconColor, setUserIconColor] = useState(colors.yellow);
+  const [receiptIconColor, setReceiptIconColor] = useState(colors.yellow);
+  const [settingsIconColor, setSettingsIconColor] = useState(colors.yellow);
+
+  // main button background
+  const [buttonBgColor, setButtonBgColor] = useState(colors.yellow);
+
   const handleStartSplitting = () => {
     navigation.navigate('Split');
   };
 
   return (
     <View style={styles.container}>
+      {/* icon row */}
       <View style={styles.iconRow}>
-        <TouchableOpacity style={styles.iconButton}>
-          <FontAwesome5 name="gamepad" size={24} color={colors.yellow} />
-        </TouchableOpacity>
+        <Pressable
+          onPressIn={() => setGameIconColor(colors.green)}
+          onPressOut={() => setGameIconColor(colors.yellow)}
+          onPress={() => {}}
+          style={styles.iconButton}
+        >
+          <FontAwesome5 name="gamepad" size={24} color={gameIconColor} />
+        </Pressable>
+
+        <Pressable
+          onPressIn={() => setUserIconColor(colors.green)}
+          onPressOut={() => setUserIconColor(colors.yellow)}
+          onPress={() => {}}
+          style={styles.iconButton}
+        >
+          <FontAwesome5 name="user" size={24} color={userIconColor} />
+        </Pressable>
+
+        <Pressable
+          onPressIn={() => setReceiptIconColor(colors.green)}
+          onPressOut={() => setReceiptIconColor(colors.yellow)}
+          onPress={() => {}}
+          style={styles.iconButton}
+        >
+          <FontAwesome5 name="receipt" size={24} color={receiptIconColor} />
+        </Pressable>
+
+        <Pressable
+          onPressIn={() => setSettingsIconColor(colors.green)}
+          onPressOut={() => setSettingsIconColor(colors.yellow)}
+          onPress={() => {}}
+          style={styles.iconButton}
+        >
+          <FontAwesome5 name="cog" size={24} color={settingsIconColor} />
+        </Pressable>
       </View>
 
+      {/* title */}
       <View style={styles.titleContainer}>
         <AppText style={[styles.title, styles.boldText]}>Receipt</AppText>
         <AppText style={[styles.title, styles.titleSpacing, styles.boldText]}>
@@ -36,10 +82,16 @@ const Home = () => {
         </AppText>
       </View>
 
+      {/* bottom button */}
       <View style={styles.bottom}>
-        <TouchableOpacity style={styles.startButton} onPress={handleStartSplitting}>
+        <Pressable
+          style={[styles.startButton, { backgroundColor: buttonBgColor }]}
+          onPress={handleStartSplitting}
+          onPressIn={() => setButtonBgColor(colors.green)}
+          onPressOut={() => setButtonBgColor(colors.yellow)}
+        >
           <AppText style={styles.buttonText}>Start Splitting</AppText>
-        </TouchableOpacity>
+        </Pressable>
       </View>
     </View>
   );
@@ -55,13 +107,15 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   iconRow: {
+    flexDirection: 'row',
     position: 'absolute',
     top: 40,
     width: '100%',
+    justifyContent: 'space-evenly',
     alignItems: 'center',
   },
   iconButton: {
-    top: 10,
+    padding: 10,
   },
   titleContainer: {
     position: 'absolute',
@@ -75,13 +129,13 @@ const styles = StyleSheet.create({
     fontSize: 50,
     color: 'white',
     textAlign: 'center',
-    fontWeight: 'bold'
+    fontWeight: 'bold',
   },
   titleSpacing: {
     marginTop: 20,
   },
   boldText: {
-    fontWeight: 'bold', // This will trigger the bold font in AppText.tsx
+    fontWeight: 'bold',
   },
   bottom: {
     position: 'absolute',
@@ -91,7 +145,6 @@ const styles = StyleSheet.create({
     zIndex: 5,
   },
   startButton: {
-    backgroundColor: colors.yellow,
     width: buttonWidth,
     height: buttonHeight,
     borderRadius: 5,
