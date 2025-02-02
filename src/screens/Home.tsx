@@ -1,19 +1,19 @@
-import React, { useState } from 'react';
-import { View, StyleSheet, Pressable, Dimensions } from 'react-native';
-import AppText from '../../components/AppText';
-import { FontAwesome5 } from '@expo/vector-icons';
-import { useNavigation } from '@react-navigation/native';
-import { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import { RootStackParamList } from '../types/RootStackParams';
-import colors from '../../constants/colors';
+import React, { useState } from "react";
+import { View, StyleSheet, Pressable, Dimensions } from "react-native";
+import AppText from "../../components/AppText";
+import { FontAwesome5 } from "@expo/vector-icons";
+import { useNavigation } from "@react-navigation/native";
+import { NativeStackNavigationProp } from "@react-navigation/native-stack";
+import { RootStackParamList } from "../types/RootStackParams";
+import colors from "../../constants/colors";
 
 type HomeScreenNavigationProp = NativeStackNavigationProp<
   RootStackParamList,
-  'Home'
+  "Home"
 >;
 
-const screenWidth = Dimensions.get('window').width;
-const screenHeight = Dimensions.get('window').height;
+const screenWidth = Dimensions.get("window").width;
+const screenHeight = Dimensions.get("window").height;
 const buttonWidth = screenWidth * 0.5;
 const buttonHeight = buttonWidth / 2;
 
@@ -24,13 +24,13 @@ const Home = () => {
   const [gameIconColor, setGameIconColor] = useState(colors.yellow);
   const [userIconColor, setUserIconColor] = useState(colors.yellow);
   const [receiptIconColor, setReceiptIconColor] = useState(colors.yellow);
-  const [settingsIconColor, setSettingsIconColor] = useState(colors.yellow);
+  const [privacyIconColor, setprivacyIconColor] = useState(colors.yellow);
 
   // main button background
   const [buttonBgColor, setButtonBgColor] = useState(colors.yellow);
 
   const handleStartSplitting = () => {
-    navigation.navigate('Split');
+    navigation.navigate("Split");
   };
 
   return (
@@ -65,12 +65,12 @@ const Home = () => {
         </Pressable>
 
         <Pressable
-          onPressIn={() => setSettingsIconColor(colors.green)}
-          onPressOut={() => setSettingsIconColor(colors.yellow)}
+          onPressIn={() => setprivacyIconColor(colors.green)}
+          onPressOut={() => setprivacyIconColor(colors.yellow)}
           onPress={() => {}}
           style={styles.iconButton}
         >
-          <FontAwesome5 name="cog" size={24} color={settingsIconColor} />
+          <FontAwesome5 name="shield-alt" size={24} color={privacyIconColor} />
         </Pressable>
       </View>
 
@@ -90,7 +90,9 @@ const Home = () => {
           onPressIn={() => setButtonBgColor(colors.green)}
           onPressOut={() => setButtonBgColor(colors.yellow)}
         >
-          <AppText style={styles.buttonText}>Start Splitting</AppText>
+          <AppText style={[styles.buttonText, styles.boldText]}>
+            Start Splitting
+          </AppText>
         </Pressable>
       </View>
     </View>
@@ -103,57 +105,59 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: colors.yuck,
-    alignItems: 'center',
-    justifyContent: 'center',
+    alignItems: "center",
+    justifyContent: "center",
   },
   iconRow: {
-    flexDirection: 'row',
-    position: 'absolute',
+    flexDirection: "row",
+    position: "absolute",
     top: 40,
-    width: '100%',
-    justifyContent: 'space-evenly',
-    alignItems: 'center',
+    width: "100%",
+    justifyContent: "space-evenly",
+    alignItems: "center",
   },
   iconButton: {
     padding: 10,
   },
   titleContainer: {
-    position: 'absolute',
+    position: "absolute",
     top: screenHeight * 0.25,
     left: 0,
     right: 0,
-    alignItems: 'center',
+    alignItems: "center",
     zIndex: 10,
   },
   title: {
     fontSize: 50,
-    color: 'white',
-    textAlign: 'center',
-    fontWeight: 'bold',
+    color: "white",
+    textAlign: "center",
+    fontWeight: "bold",
   },
   titleSpacing: {
     marginTop: 20,
   },
   boldText: {
-    fontWeight: 'bold',
+    fontWeight: "bold",
   },
   bottom: {
-    position: 'absolute',
+    position: "absolute",
     bottom: screenWidth / 4,
-    width: '100%',
-    alignItems: 'center',
+    width: "100%",
+    alignItems: "center",
     zIndex: 5,
   },
   startButton: {
     width: buttonWidth,
     height: buttonHeight,
     borderRadius: 5,
-    alignItems: 'center',
-    justifyContent: 'center',
+    alignItems: "center",
+    justifyContent: "center",
   },
   buttonText: {
     fontSize: 24,
-    color: 'black',
-    fontWeight: 'bold',
+    color: "black",
+    textShadowColor: "rgba(0, 0, 0, 0.75)",
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 2,
   },
 });
