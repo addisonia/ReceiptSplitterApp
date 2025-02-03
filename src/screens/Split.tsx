@@ -1,5 +1,5 @@
 // src/screens/Split.tsx
-import React, { useState } from "react";
+import React, { useState, useRef } from "react";
 import {
   View,
   Text,
@@ -17,12 +17,12 @@ import {
 } from "react-native";
 import { FontAwesome5 } from "@expo/vector-icons";
 import { useNavigation } from "@react-navigation/native";
-import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
-import { RootStackParamList } from "../types/RootStackParams";
 
+// colors
 const colors = {
   white: "#ffffff",
   offWhite: "#ede7d8",
+  offWhite2: "rgba(255, 255, 255, 0.78)",
   lightGray: "#f0f0f0",
   lightGray2: "#dfdfdf",
   yellow: "#e3d400",
@@ -35,6 +35,7 @@ const colors = {
   black: "#000000",
 };
 
+// checkbox component
 const CheckBox = ({
   value,
   onValueChange,
@@ -55,6 +56,7 @@ const CheckBox = ({
   );
 };
 
+// checkbox styles
 const checkboxStyles = StyleSheet.create({
   box: {
     width: 20,
@@ -67,10 +69,19 @@ const checkboxStyles = StyleSheet.create({
   },
 });
 
-const Split = () => {
-  const navigation =
-    useNavigation<NativeStackNavigationProp<RootStackParamList, "Split">>();
+// item type
+type ItemType = {
+  item: string;
+  price: number;
+  quantity: number;
+  buyers: { name: string; selected: boolean[] }[];
+  tempQuantity?: string;
+};
 
+const Split = () => {
+  const navigation = useNavigation<any>(); // removed custom param list
+
+  // state
   const [receiptName, setReceiptName] = useState("");
   const [receiptNameInput, setReceiptNameInput] = useState("");
   const [buyerNameInput, setBuyerNameInput] = useState("");
@@ -81,39 +92,42 @@ const Split = () => {
   const [taxInput, setTaxInput] = useState("");
   const [itemNameInput, setItemNameInput] = useState("");
   const [itemPriceInput, setItemPriceInput] = useState("");
-  const [items, setItems] = useState<
-    {
-      item: string;
-      price: number;
-      quantity: number;
-      buyers: { name: string; selected: boolean[] }[];
-    }[]
-  >([]);
-
+  const [items, setItems] = useState<ItemType[]>([]);
   const [showSettings, setShowSettings] = useState(false);
   const [darkMode, setDarkMode] = useState(false);
   const [splitTaxEvenly, setSplitTaxEvenly] = useState(true);
 
+  // references for focusing text inputs
+  const buyerRef = useRef<TextInput | null>(null);
+  const itemNameRef = useRef<TextInput | null>(null);
+  const priceRef = useRef<TextInput | null>(null);
+
+  // navigation
   const goHome = () => {
     navigation.navigate("Home");
   };
 
+  // receipt name
   const handleAddReceiptName = () => {
     setReceiptName(receiptNameInput.trim() || "placeholder");
     setReceiptNameInput("");
   };
 
+  // add buyer
   const handleAddBuyer = () => {
     const name = buyerNameInput.trim();
     if (!name) return;
     let newName = name;
     let duplicateCount = 1;
+
     while (buyers.find((b) => b.name === newName)) {
       duplicateCount++;
       newName = `${name} (${duplicateCount})`;
     }
     const newBuyer = { name: newName, selected: [] };
     setBuyers((prev) => [...prev, newBuyer]);
+
+    // also add this buyer to all existing items
     setItems((prevItems) =>
       prevItems.map((item) => ({
         ...item,
@@ -123,15 +137,22 @@ const Split = () => {
         ],
       }))
     );
+
     setBuyerNameInput("");
+    // keep focus in the buyer text box
+    setTimeout(() => {
+      buyerRef.current?.focus();
+    }, 0);
   };
 
+  // add tax
   const handleAddTax = () => {
     const parsedTax = parseFloat(taxInput);
     setTax(!isNaN(parsedTax) ? parsedTax : 0);
     setTaxInput("");
   };
 
+  // add item
   const handleSubmitItem = () => {
     const name = itemNameInput.trim();
     if (!name) return;
@@ -143,7 +164,7 @@ const Split = () => {
       Alert.alert("Invalid Price", "Please enter a valid price.");
       return;
     }
-    const newItem = {
+    const newItem: ItemType = {
       item: name,
       price,
       quantity: 1,
@@ -154,24 +175,36 @@ const Split = () => {
     setItemPriceInput("");
   };
 
-  const handleQuantityChange = (index: number, newQuantityStr: string) => {
-    const newQuantity = parseInt(newQuantityStr, 10);
-    if (isNaN(newQuantity) || newQuantity < 1) return;
-    setItems((prev) =>
-      prev.map((item, idx) => {
-        if (idx !== index) return item;
+  // finalize quantity after blur
+  const finalizeQuantity = (itemIndex: number) => {
+    setItems((prevItems) => {
+      return prevItems.map((item, idx) => {
+        if (idx !== itemIndex) return item;
+        const finalVal = item.tempQuantity ?? item.quantity.toString();
+        const newQuantity = parseInt(finalVal, 10);
+
+        if (isNaN(newQuantity) || newQuantity < 1) {
+          const { tempQuantity, ...rest } = item;
+          return rest;
+        }
         const updatedBuyers = item.buyers.map((buyer) => {
-          let newSelected = buyer.selected.slice(0, newQuantity);
+          const newSelected = buyer.selected.slice(0, newQuantity);
           while (newSelected.length < newQuantity) {
             newSelected.push(true);
           }
           return { ...buyer, selected: newSelected };
         });
-        return { ...item, quantity: newQuantity, buyers: updatedBuyers };
-      })
-    );
+        return {
+          ...item,
+          quantity: newQuantity,
+          buyers: updatedBuyers,
+          tempQuantity: undefined,
+        };
+      });
+    });
   };
 
+  // checkbox toggling
   const toggleBuyerSelection = (
     itemIndex: number,
     buyerIndex: number,
@@ -191,9 +224,11 @@ const Split = () => {
     );
   };
 
+  // calculate how much each buyer owes
   const calculateBuyerOwes = () => {
     const buyerTotals = buyers.map(() => 0);
     let totalCostWithoutTax = 0;
+
     items.forEach((item) => {
       for (let i = 0; i < item.quantity; i++) {
         const selectedBuyers = item.buyers.filter((b) => b.selected[i]);
@@ -208,25 +243,33 @@ const Split = () => {
         });
       }
     });
+
     if (buyers.length === 0) return buyerTotals;
+
+    // if no items but there's tax, split evenly
     if (items.length === 0 && tax > 0) {
       const taxPerBuyer = tax / buyers.length;
       return buyerTotals.map((total) => total + taxPerBuyer);
     } else if (splitTaxEvenly) {
+      // if user wants to split tax evenly
       const taxPerBuyer = tax / buyers.length;
       return buyerTotals.map((total) => total + taxPerBuyer);
-    } else if (totalCostWithoutTax > 0) {
-      return buyerTotals.map((total) => {
-        if (total === 0) return total;
-        const taxContribution = (total / totalCostWithoutTax) * tax;
-        return total + taxContribution;
-      });
+    } else {
+      // otherwise split tax proportionally
+      if (totalCostWithoutTax > 0) {
+        return buyerTotals.map((total) => {
+          if (total === 0) return total;
+          const taxContribution = (total / totalCostWithoutTax) * tax;
+          return total + taxContribution;
+        });
+      }
+      return buyerTotals;
     }
-    return buyerTotals;
   };
 
   const buyerTotals = calculateBuyerOwes();
 
+  // total cost
   const calculateTotalCost = () => {
     let total = 0;
     items.forEach((item) => {
@@ -235,6 +278,7 @@ const Split = () => {
     return total + tax;
   };
 
+  // clear data
   const handleClearData = () => {
     setReceiptName("");
     setBuyers([]);
@@ -248,9 +292,9 @@ const Split = () => {
       behavior={Platform.OS === "ios" ? "padding" : undefined}
     >
       <ScrollView contentContainerStyle={styles.scrollContent}>
-        {/* Top Buttons Container */}
+        {/* top buttons */}
         <View style={styles.topButtonsContainer}>
-          {/* Home button as icon */}
+          {/* home button */}
           <Pressable style={styles.topButton} onPress={goHome}>
             {({ pressed }) => (
               <FontAwesome5
@@ -261,31 +305,25 @@ const Split = () => {
             )}
           </Pressable>
 
-          {/* Group Clear Data + Settings on the right */}
+          {/* clear data + settings */}
           <View style={{ flexDirection: "row" }}>
-            {/* Clear Data button */}
             <Pressable
               style={({ pressed }) => [
                 styles.topButton,
-                { 
+                styles.clearDataButton,
+                {
                   backgroundColor: pressed ? colors.green : colors.yellow,
-                  marginRight: 80, // shift it slightly left
-                  justifyContent: 'center'
+                  marginRight: 80,
+                  justifyContent: "center",
                 },
               ]}
               onPress={handleClearData}
             >
-              <Text
-                style={[
-                  styles.buttonText,
-                  { color: darkMode ? colors.white : colors.black },
-                ]}
-              >
+              <Text style={[styles.buttonText, { color: colors.black }]}>
                 Clear Data
               </Text>
             </Pressable>
 
-            {/* Settings button as icon */}
             <Pressable
               style={styles.settingsButton}
               onPress={() => setShowSettings(true)}
@@ -301,7 +339,7 @@ const Split = () => {
           </View>
         </View>
 
-        {/* Receipt Name Input */}
+        {/* receipt name */}
         <View
           style={[
             styles.receiptNameContainer,
@@ -320,17 +358,20 @@ const Split = () => {
             style={[
               styles.inputField,
               { flex: 1 },
-              darkMode ? darkStyles.inputField : { color: colors.black },
+              darkMode ? darkStyles.inputField : null,
             ]}
             placeholder="optional"
             placeholderTextColor={darkMode ? "#999" : "#000"}
             value={receiptNameInput}
             onChangeText={setReceiptNameInput}
+            onSubmitEditing={handleAddReceiptName}
+            returnKeyType="done"
           />
           <Pressable
             onPress={handleAddReceiptName}
             style={({ pressed }) => [
               styles.addButton,
+              styles.borderBlack,
               styles.addReceiptButton,
               { backgroundColor: pressed ? colors.green : colors.yellow },
             ]}
@@ -339,9 +380,9 @@ const Split = () => {
           </Pressable>
         </View>
 
-        {/* Row: Buyers & Tax */}
+        {/* buyers & tax row */}
         <View style={styles.rowContainer}>
-          {/* Buyers Form */}
+          {/* buyers form */}
           <View
             style={[
               styles.formContainer,
@@ -358,20 +399,24 @@ const Split = () => {
               Buyers:
             </Text>
             <TextInput
+              ref={buyerRef}
               style={[
                 styles.inputField,
                 { width: "75%" },
-                darkMode ? darkStyles.inputField : { color: colors.black },
+                darkMode ? darkStyles.inputField : null,
               ]}
               placeholder="Enter a buyer"
               placeholderTextColor={darkMode ? "#999" : "#000"}
               value={buyerNameInput}
               onChangeText={setBuyerNameInput}
+              onSubmitEditing={handleAddBuyer}
+              returnKeyType="done"
             />
             <Pressable
               onPress={handleAddBuyer}
               style={({ pressed }) => [
                 styles.addButton,
+                styles.borderBlack,
                 styles.addBuyersTaxButtons,
                 {
                   width: "75%",
@@ -383,7 +428,7 @@ const Split = () => {
             </Pressable>
           </View>
 
-          {/* Tax Form */}
+          {/* tax form */}
           <View
             style={[
               styles.formContainer,
@@ -403,18 +448,21 @@ const Split = () => {
               style={[
                 styles.inputField,
                 { width: "75%" },
-                darkMode ? darkStyles.inputField : { color: colors.black },
+                darkMode ? darkStyles.inputField : null,
               ]}
               placeholder="0.00"
               placeholderTextColor={darkMode ? "#999" : "#000"}
               keyboardType="numeric"
               value={taxInput}
               onChangeText={setTaxInput}
+              onSubmitEditing={handleAddTax}
+              returnKeyType="done"
             />
             <Pressable
               onPress={handleAddTax}
               style={({ pressed }) => [
                 styles.addButton,
+                styles.borderBlack,
                 styles.addBuyersTaxButtons,
                 {
                   width: "75%",
@@ -427,32 +475,50 @@ const Split = () => {
           </View>
         </View>
 
-        {/* Item Form */}
+        {/* item form */}
         <View style={styles.itemForm}>
           <View style={[styles.itemInputRow, { justifyContent: "center" }]}>
             <Text style={styles.itemLabel}>Item:</Text>
             <TextInput
-              style={styles.itemInput}
+              ref={itemNameRef}
+              style={[styles.itemInput]}
               value={itemNameInput}
               onChangeText={setItemNameInput}
+              onSubmitEditing={() => {
+                // Pressing Enter -> move focus to price
+                priceRef.current?.focus();
+              }}
+              returnKeyType="next"
             />
           </View>
           <View style={[styles.itemInputRow, { justifyContent: "center" }]}>
             <Text style={styles.itemLabel}>Price: $</Text>
             <TextInput
-              style={styles.itemInput}
+              ref={priceRef}
+              style={[styles.itemInput]}
               value={itemPriceInput}
               onChangeText={setItemPriceInput}
               keyboardType="numeric"
+              onSubmitEditing={() => {
+                // Pressing Enter -> add item, re-focus itemName
+                handleSubmitItem();
+                setTimeout(() => itemNameRef.current?.focus(), 0);
+              }}
+              returnKeyType="done"
             />
           </View>
           <Pressable
-            onPress={handleSubmitItem}
+            onPress={() => {
+              handleSubmitItem();
+              // after pressing Add, focus itemName
+              setTimeout(() => itemNameRef.current?.focus(), 0);
+            }}
             style={({ pressed }) => [
               styles.submitItemButton,
-              { 
-                width: '70%',
-                backgroundColor: pressed ? colors.green : colors.yellow 
+              styles.borderBlack,
+              {
+                width: "70%",
+                backgroundColor: pressed ? colors.green : colors.yellow,
               },
             ]}
           >
@@ -460,7 +526,7 @@ const Split = () => {
           </Pressable>
         </View>
 
-        {/* Cost per Buyer Section */}
+        {/* cost per buyer */}
         <View style={styles.costPerBuyerSection}>
           <Text
             style={[
@@ -494,16 +560,14 @@ const Split = () => {
           )}
         </View>
 
-        {/* Tax & Total Cost Displays */}
+        {/* tax & total cost displays */}
         <Text
           style={[
             styles.displayText,
             { color: darkMode ? colors.white : colors.black },
           ]}
         >
-          <Text style={{ fontWeight: "bold" }}>Tax Amount:</Text> ${tax.toFixed(
-            2
-          )}
+          <Text style={{ fontWeight: "bold" }}>Tax Amount:</Text> ${tax.toFixed(2)}
         </Text>
         <Text
           style={[
@@ -515,15 +579,15 @@ const Split = () => {
           {calculateTotalCost().toFixed(2)}
         </Text>
 
-        {/* Display Grid Titles */}
-        <View
-          style={[styles.gridTitles, darkMode ? darkStyles.gridTitles : null]}
-        >
+        {/* grid titles */}
+        <View style={[styles.gridTitles, darkMode ? darkStyles.gridTitles : null]}>
           <Text
             style={[
               styles.gridCell,
               styles.firstGridCell,
-              { flex: 0.7, color: darkMode ? colors.white : colors.black },
+              styles.gridTitleText,
+              { flex: 0.9, color: darkMode ? colors.offWhite2 : colors.black },
+              darkMode ? darkStyles.gridCell : null,
             ]}
           >
             Item
@@ -531,7 +595,9 @@ const Split = () => {
           <Text
             style={[
               styles.gridCell,
-              { flex: 0.5, color: darkMode ? colors.white : colors.black },
+              styles.gridTitleText,
+              { flex: 0.5, color: darkMode ? colors.offWhite2 : colors.black },
+              darkMode ? darkStyles.gridCell : null,
             ]}
           >
             Price
@@ -539,7 +605,9 @@ const Split = () => {
           <Text
             style={[
               styles.gridCell,
-              { flex: 0.4, color: darkMode ? colors.white : colors.black },
+              styles.gridTitleText,
+              { flex: 0.4, color: darkMode ? colors.offWhite2 : colors.black },
+              darkMode ? darkStyles.gridCell : null,
             ]}
           >
             Qty
@@ -547,113 +615,161 @@ const Split = () => {
           <Text
             style={[
               styles.gridCell,
-              { flex: 1.4, color: darkMode ? colors.white : colors.black },
+              styles.gridTitleText,
+              { flex: 1.2, color: darkMode ? colors.offWhite2 : colors.black },
+              darkMode ? darkStyles.gridCell : null,
             ]}
           >
             Buyers
           </Text>
         </View>
 
-        {/* Display Grid Items */}
+        {/* display grid items */}
         {items.map((item, itemIndex) => (
           <View
             key={itemIndex}
-            style={[styles.gridRow, darkMode ? darkStyles.gridRow : null]}
+            style={[
+              styles.gridRow,
+              darkMode ? darkStyles.gridRow : null,
+            ]}
           >
             <View
-              style={[styles.gridCell, styles.firstGridCell, { flex: 0.7 }]}
-            >
-              <TouchableOpacity
-                onPress={() =>
-                  setItems((prev) => prev.filter((_, idx) => idx !== itemIndex))
-                }
-                style={styles.trashIcon}
-              >
-                <FontAwesome5 name="trash" size={16} color="red" />
-              </TouchableOpacity>
-              <Text
-                style={styles.itemNameText}
-                numberOfLines={2}
-                ellipsizeMode="tail"
-              >
-                {item.item}
-              </Text>
-            </View>
-
-            <Text
               style={[
                 styles.gridCell,
-                { flex: 0.5, color: darkMode ? colors.white : colors.black },
+                styles.firstGridCell,
+                { flex: 0.9 },
+                darkMode ? darkStyles.gridCell : null,
               ]}
             >
-              ${item.price.toFixed(2)}
-            </Text>
-
-            <View style={[styles.gridCell, { flex: 0.4 }]}>
-              <TextInput
-                style={[
-                  styles.quantityInput,
-                  darkMode ? darkStyles.quantityInput : null,
-                ]}
-                keyboardType="numeric"
-                value={item.quantity.toString()}
-                onChangeText={(newVal) => handleQuantityChange(itemIndex, newVal)}
-              />
+              <View style={styles.cellInner}>
+                <TouchableOpacity
+                  onPress={() =>
+                    setItems((prev) => prev.filter((_, idx) => idx !== itemIndex))
+                  }
+                  style={styles.trashIcon}
+                >
+                  <FontAwesome5 name="trash" size={16} color="red" />
+                </TouchableOpacity>
+                <Text
+                  style={[
+                    styles.itemNameText,
+                    { color: darkMode ? colors.offWhite2 : colors.black },
+                  ]}
+                >
+                  {item.item}
+                </Text>
+              </View>
             </View>
 
-            <View style={[styles.gridCell, { flex: 1.4 }]}>
-              {Array.from({ length: item.quantity }).map((_, qtyIndex) => (
-                <View key={qtyIndex} style={styles.buyerRow}>
-                  {item.buyers.map((buyer, buyerIndex) => (
-                    <View key={buyerIndex} style={styles.buyerContainer}>
-                      <CheckBox
-                        value={buyer.selected[qtyIndex]}
-                        onValueChange={() =>
-                          toggleBuyerSelection(itemIndex, buyerIndex, qtyIndex)
+            <View
+              style={[
+                styles.gridCell,
+                { flex: 0.5 },
+                darkMode ? darkStyles.gridCell : null,
+              ]}
+            >
+              <View style={styles.cellInner}>
+                <Text
+                  style={{
+                    color: darkMode ? colors.offWhite2 : colors.black,
+                  }}
+                >
+                  ${item.price.toFixed(2)}
+                </Text>
+              </View>
+            </View>
+
+            <View
+              style={[
+                styles.gridCell,
+                { flex: 0.4 },
+                darkMode ? darkStyles.gridCell : null,
+              ]}
+            >
+              <View style={styles.cellInner}>
+                <TextInput
+                  style={[
+                    styles.quantityInput,
+                    !darkMode
+                      ? {
+                          backgroundColor: colors.offWhite2,
+                          color: colors.black,
                         }
-                      />
-                      <Text style={styles.buyerLabel}>{buyer.name}</Text>
-                    </View>
-                  ))}
-                </View>
-              ))}
+                      : {},
+                    darkMode ? darkStyles.quantityInput : null,
+                  ]}
+                  keyboardType="numeric"
+                  value={
+                    item.tempQuantity !== undefined
+                      ? item.tempQuantity
+                      : item.quantity.toString()
+                  }
+                  onChangeText={(val) => {
+                    setItems((prev) =>
+                      prev.map((it, i) => {
+                        if (i !== itemIndex) return it;
+                        return { ...it, tempQuantity: val };
+                      })
+                    );
+                  }}
+                  onBlur={() => finalizeQuantity(itemIndex)}
+                />
+              </View>
+            </View>
+
+            <View
+              style={[
+                styles.gridCell,
+                { flex: 1.2 },
+                darkMode ? darkStyles.gridCell : null,
+              ]}
+            >
+              <View style={styles.cellInner}>
+                {Array.from({ length: item.quantity }).map((_, qtyIndex) => (
+                  <View key={qtyIndex} style={styles.buyerRow}>
+                    {item.buyers.map((buyer, buyerIndex) => (
+                      <View key={buyerIndex} style={styles.buyerContainer}>
+                        <CheckBox
+                          value={buyer.selected[qtyIndex]}
+                          onValueChange={() =>
+                            toggleBuyerSelection(itemIndex, buyerIndex, qtyIndex)
+                          }
+                        />
+                        <Text
+                          style={[
+                            styles.buyerLabel,
+                            { color: darkMode ? colors.offWhite2 : colors.black },
+                          ]}
+                        >
+                          {buyer.name}
+                        </Text>
+                      </View>
+                    ))}
+                  </View>
+                ))}
+              </View>
             </View>
           </View>
         ))}
       </ScrollView>
 
-      {/* Settings Modal */}
+      {/* settings modal */}
       <Modal visible={showSettings} animationType="none" transparent>
         <TouchableWithoutFeedback onPress={() => setShowSettings(false)}>
           <View style={styles.modalOverlay}>
             <TouchableWithoutFeedback>
               <View style={styles.settingsModal}>
-                <Text
-                  style={[
-                    styles.modalTitle,
-                    { color: darkMode ? colors.black : colors.black },
-                  ]}
-                >
+                <Text style={[styles.modalTitle, { color: colors.black }]}>
                   Settings
                 </Text>
                 <View style={styles.settingRow}>
-                  <Text
-                    style={[
-                      styles.settingLabel,
-                      { color: darkMode ? colors.white : colors.black },
-                    ]}
-                  >
+                  <Text style={[styles.settingLabel, { color: colors.black }]}>
                     Dark Mode
                   </Text>
                   <Switch value={darkMode} onValueChange={setDarkMode} />
                 </View>
                 <View style={styles.settingRow}>
-                  <Text
-                    style={[
-                      styles.settingLabel,
-                      { color: darkMode ? colors.white : colors.black },
-                    ]}
-                  >
+                  <Text style={[styles.settingLabel, { color: colors.black }]}>
                     Split Tax Evenly
                   </Text>
                   <Switch
@@ -668,7 +784,9 @@ const Split = () => {
                     { backgroundColor: pressed ? colors.green : colors.yellow },
                   ]}
                 >
-                  <Text style={styles.buttonText}>Close</Text>
+                  <Text style={[styles.buttonText, { color: colors.black }]}>
+                    Close
+                  </Text>
                 </Pressable>
               </View>
             </TouchableWithoutFeedback>
@@ -681,11 +799,11 @@ const Split = () => {
 
 export default Split;
 
+// styles
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    // overall background
-    backgroundColor: "rgba(255, 255, 255, 0.78)",
+    backgroundColor: colors.offWhite2,
   },
   scrollContent: {
     paddingBottom: 30,
@@ -701,6 +819,10 @@ const styles = StyleSheet.create({
     paddingVertical: 5,
     paddingHorizontal: 10,
     borderRadius: 4,
+  },
+  clearDataButton: {
+    borderWidth: 1,
+    borderColor: colors.black,
   },
   settingsButton: {
     padding: 5,
@@ -724,9 +846,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: colors.gray1,
     padding: 5,
-    flex: 1,
-    // changed to the requested color
-    backgroundColor: "rgba(255, 255, 255, 0.78)",
+    backgroundColor: colors.offWhite2,
     color: colors.black,
   },
   addButton: {
@@ -734,6 +854,10 @@ const styles = StyleSheet.create({
     borderRadius: 4,
     alignItems: "center",
     justifyContent: "center",
+  },
+  borderBlack: {
+    borderWidth: 1,
+    borderColor: colors.black,
   },
   addReceiptButton: {
     marginLeft: 10,
@@ -776,13 +900,14 @@ const styles = StyleSheet.create({
     width: 50,
     textAlign: "right",
     marginRight: 10,
+    justifyContent: "center",
   },
   itemInput: {
     width: 150,
     borderWidth: 1,
     padding: 5,
-    // changed to requested color
-    backgroundColor: "rgba(255, 255, 255, 0.78)",
+    backgroundColor: colors.offWhite2,
+    color: colors.black,
   },
   submitItemButton: {
     width: "60%",
@@ -815,14 +940,21 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     position: "relative",
+    justifyContent: "center",
   },
   gridTitles: {
     flexDirection: "row",
     marginHorizontal: 0,
-    marginTop: 30,
+    marginTop: 40,
     borderTopWidth: 3,
     borderBottomWidth: 3,
     borderColor: "black",
+    minHeight: 30,
+  },
+  gridTitleText: {
+    fontSize: 18,
+    fontWeight: "bold",
+    textAlign: "center",
   },
   gridRow: {
     flexDirection: "row",
@@ -832,20 +964,24 @@ const styles = StyleSheet.create({
     alignItems: "stretch",
   },
   gridCell: {
-    padding: 10,
-    textAlign: "center",
-    justifyContent: "center",
-    alignItems: "center",
     borderRightWidth: 2,
     borderColor: "black",
+    flexDirection: "row",
     flexShrink: 1,
     flexWrap: "wrap",
   },
-  itemNameText: {
-    textAlign: "left",
-    flexWrap: "wrap",
-    marginLeft: 15,
+  cellInner: {
     flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+    padding: 10,
+    position: "relative",
+  },
+  itemNameText: {
+    textAlign: "center",
+    flexWrap: "wrap",
+    width: "100%",
+    marginLeft: 10,
   },
   trashIcon: {
     position: "absolute",
@@ -856,10 +992,9 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: colors.gray1,
     textAlign: "center",
+    textAlignVertical: "center",
     padding: 5,
     width: 40,
-    // changed to requested color
-    backgroundColor: "rgba(255, 255, 255, 0.78)",
   },
   buyerRow: {
     flexDirection: "row",
@@ -915,6 +1050,7 @@ const styles = StyleSheet.create({
   },
 });
 
+// dark theme overrides
 const darkStyles = StyleSheet.create({
   container: {
     backgroundColor: "#1d1d1d",
@@ -932,20 +1068,22 @@ const darkStyles = StyleSheet.create({
     backgroundColor: "#67654d",
   },
   inputField: {
-    // forcing all inputs to the same color
-    backgroundColor: "rgba(255, 255, 255, 0.78)",
+    backgroundColor: colors.offWhite2,
     color: "#1d1d1d",
     borderColor: "#1d1d1d",
   },
   gridTitles: {
-    borderColor: "#e0e0e0",
+    borderColor: colors.offWhite2,
   },
   gridRow: {
-    borderColor: "#e0e0e0",
+    borderColor: colors.offWhite2,
+  },
+  gridCell: {
+    borderColor: colors.offWhite2,
   },
   quantityInput: {
     borderColor: "#1d1d1d",
-    backgroundColor: "rgba(255, 255, 255, 0.78)",
-    color: "#1d1d1d",
+    backgroundColor: "#1d1d1d", // match dark background
+    color: colors.offWhite2,
   },
 });
