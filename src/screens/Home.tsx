@@ -29,6 +29,12 @@ const Home = () => {
   // main button background
   const [buttonBgColor, setButtonBgColor] = useState(colors.yellow);
 
+  // navigate to snake game when game icon is pressed
+  const handleStartSnake = () => {
+    navigation.navigate("Snake");
+  };
+
+  // navigate to split screen when button is pressed
   const handleStartSplitting = () => {
     navigation.navigate("Split");
   };
@@ -40,7 +46,7 @@ const Home = () => {
         <Pressable
           onPressIn={() => setGameIconColor(colors.green)}
           onPressOut={() => setGameIconColor(colors.yellow)}
-          onPress={() => {}}
+          onPress={handleStartSnake}
           style={styles.iconButton}
         >
           <FontAwesome5 name="gamepad" size={24} color={gameIconColor} />
@@ -121,7 +127,7 @@ const styles = StyleSheet.create({
   },
   titleContainer: {
     position: "absolute",
-    top: screenHeight * 0.25,
+    top: Dimensions.get("window").height * 0.25,
     left: 0,
     right: 0,
     alignItems: "center",
@@ -141,7 +147,7 @@ const styles = StyleSheet.create({
   },
   bottom: {
     position: "absolute",
-    bottom: screenWidth / 4,
+    bottom: Dimensions.get("window").width / 4,
     width: "100%",
     alignItems: "center",
     zIndex: 5,

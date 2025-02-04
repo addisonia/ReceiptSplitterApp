@@ -7,6 +7,7 @@ required installations to run code:
 - npx expo install expo-system-ui
 - npm install @react-navigation/material-top-tabs react-native-tab-view react-native-gesture-handler react-native-reanimated react-native-screens react-native-safe-area-context react-native-vector-icons
 - npm install react-native-gesture-handler react-native-reanimated react-native-screens
+- npm install @react-native-picker/picker
 
 
 
