@@ -66,6 +66,8 @@ const Snake: React.FC = () => {
 
   // just to force re-render of the ui
   const [tick, setTick] = useState(0);
+  const [pauseTick, setPauseTick] = useState(0); // NEW state for pause re-render
+
 
   // update refs when mode changes and reset the game
   useEffect(() => {
@@ -253,6 +255,7 @@ const Snake: React.FC = () => {
   // tap the game area to pause/unpause
   const togglePause = () => {
     isPausedRef.current = !isPausedRef.current;
+    setPauseTick(pt => pt + 1); // Force re-render by updating pauseTick (NEW LINE)
   };
 
   // run the gameLoop once on startup
@@ -365,8 +368,9 @@ const Snake: React.FC = () => {
             style={[styles.food, { left: foodRef.current.x, top: foodRef.current.y }]}
           />
           {isPausedRef.current && (
-            <View style={styles.pauseOverlay}>
+            <View style={styles.pauseOverlay} key={pauseTick}>
               <Text style={styles.pauseText}>paused</Text>
+              <Text style={styles.pauseSubText}>(tap to unpause)</Text>
             </View>
           )}
         </View>
@@ -503,12 +507,17 @@ const styles = StyleSheet.create({
   },
   pauseOverlay: {
     ...StyleSheet.absoluteFillObject,
-    backgroundColor: "rgba(0,0,0,0.4)",
+    backgroundColor: "rgb(255, 141, 141)", 
     justifyContent: "center",
     alignItems: "center",
+    opacity: 1, 
   },
   pauseText: {
     fontSize: 40,
+    color: "#fff",
+  },
+  pauseSubText: {
+    fontSize: 30,
     color: "#fff",
   },
   gameOverModal: {
