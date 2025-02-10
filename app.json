@@ -5,12 +5,13 @@
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
-    "scheme": "receiptsplitter",
+    "scheme": "exp",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "org.receiptsplitter.app"
+      "bundleIdentifier": "org.receiptsplitter.app",
+      "scheme": "exp"
     },
     "android": {
       "package": "org.receiptsplitter.app",
@@ -18,7 +19,20 @@
       "adaptiveIcon": {
         "foregroundImage": "./assets/images/adaptive-icon.png",
         "backgroundColor": "#ffffff"
-      }
+      },
+      "intentFilters": [
+        {
+          "action": "VIEW",
+          "data": [
+            {
+              "scheme": "exp",
+              "host": "192.168.1.16",
+              "pathPrefix": "/--/"
+            }
+          ],
+          "category": ["BROWSABLE", "DEFAULT"]
+        }
+      ]
     },
     "web": {
       "bundler": "metro",
@@ -39,6 +53,9 @@
     "extra": {
       "eas": {
         "projectId": "b7e0aa76-fa14-45e4-b0a9-8dad3bcebafb"
+      },
+      "deepLinking": {
+        "schemes": ["exp"]
       }
     },
     "owner": "addisonia"

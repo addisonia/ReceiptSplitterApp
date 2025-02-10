@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import {
   View,
   StyleSheet,
@@ -6,6 +6,8 @@ import {
   Dimensions,
   Modal,
   TouchableWithoutFeedback,
+  Image,
+  Text,
 } from "react-native";
 import AppText from "../../components/AppText";
 import { FontAwesome5 } from "@expo/vector-icons";
@@ -14,10 +16,9 @@ import { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { RootStackParamList } from "../types/RootStackParams";
 import colors from "../../constants/colors";
 import { WebView } from "react-native-webview";
-import * as WebBrowser from "expo-web-browser";
 import GoogleSignInButton from "../components/GoogleSignInButton";
-
-WebBrowser.maybeCompleteAuthSession();
+import { auth } from "../firebase";
+import { User, signOut } from "firebase/auth";
 
 type HomeScreenNavigationProp = NativeStackNavigationProp<
   RootStackParamList,
@@ -31,31 +32,33 @@ const buttonHeight = buttonWidth / 2;
 const htmlContent = `
   <html>
     <head>
+      <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
       <style>
         body {
+          background-color: white;
           font-family: Arial, sans-serif;
           padding: 20px;
-          font-size: 24px; /* increased base font size */
-          line-height: 1.8; /* better spacing */
+          font-size: 20px; 
+          line-height: 1.8;
           color: #333;
         }
         h1 {
-          font-size: 32px; /* larger header */
+          font-size: 22px; 
           color: #222;
         }
         h2 {
-          font-size: 28px; /* larger sub-header */
+          font-size: 14px;
           color: #222;
         }
         h3 {
-          font-size: 26px;
+          font-size: 12px;
           color: #222;
         }
         p, li {
-          font-size: 24px; /* increased paragraph & list font size */
+          font-size: 14px;
         }
         a {
-          font-size: 24px;
+          font-size: 14px;
           color: #0066cc;
           text-decoration: none;
         }
@@ -106,7 +109,7 @@ const htmlContent = `
       <h2>Contact Us</h2>
       <p>If you have any questions about this Privacy Policy, you can contact us:</p>
       <ul>
-        <li>By email: <a href="mailto:officialreceiptsplitter@gmail.com">officialreceiptsplitter@gmail.com</a></li>
+        <li>By email: officialreceiptsplitter@gmail.com</li>
         <li>By phone: 608-234-0029</li>
       </ul>
     </body>
@@ -115,6 +118,26 @@ const htmlContent = `
 
 const Home = () => {
   const navigation = useNavigation<HomeScreenNavigationProp>();
+
+  // track auth
+  const [user, setUser] = useState<User | null>(null);
+  const [isSignInModalVisible, setSignInModalVisible] = useState(false);
+
+  useEffect(() => {
+    const unsubscribe = auth.onAuthStateChanged((currentUser) => {
+      setUser(currentUser);
+    });
+    return () => unsubscribe();
+  }, []);
+
+  const handleSignOut = async () => {
+    try {
+      await signOut(auth);
+      setSignInModalVisible(false);
+    } catch (error) {
+      console.error("Sign out error:", error);
+    }
+  };
 
   // icon states
   const [gameIconColor, setGameIconColor] = useState(colors.yellow);
@@ -125,7 +148,7 @@ const Home = () => {
   // main button background
   const [buttonBgColor, setButtonBgColor] = useState(colors.yellow);
 
-  // state to control privacy modal visibility
+  // privacy modal
   const [isPrivacyModalVisible, setPrivacyModalVisible] = useState(false);
 
   const handleStartSnake = () => {
@@ -136,7 +159,45 @@ const Home = () => {
     navigation.navigate("Split");
   };
 
-  const [isSignInModalVisible, setSignInModalVisible] = useState(false);
+  // this helper renders sign-in or sign-out content inside the modal
+  const renderAuthContent = () => {
+    if (user) {
+      return (
+        <View style={styles.authContainer}>
+          {/* this "Signed In" text is in the modal, but we also added one outside the modal below */}
+          <AppText style={styles.modalTitle}>Signed In</AppText>
+          {user.photoURL && (
+            <Image
+              source={{ uri: user.photoURL }}
+              style={styles.profileImage}
+            />
+          )}
+          <AppText style={styles.userEmail}>{user.email}</AppText>
+          <Pressable
+            onPress={handleSignOut}
+            style={({ pressed }) => [
+              styles.signOutButton,
+              pressed && styles.signOutButtonPressed,
+            ]}
+          >
+            <Text style={styles.signOutText}>Sign Out</Text>
+          </Pressable>
+        </View>
+      );
+    }
+    // if user isn't signed in yet
+    return (
+      <View style={styles.authContainer}>
+        <AppText style={styles.modalTitle}>Sign In To Receipt Splitter</AppText>
+        <GoogleSignInButton
+          onSuccess={() => setSignInModalVisible(false)}
+          style={({ pressed }) =>
+            pressed ? { backgroundColor: colors.green } : undefined
+          }
+        />
+      </View>
+    );
+  };
 
   return (
     <View style={styles.container}>
@@ -158,13 +219,14 @@ const Home = () => {
           style={styles.iconButton}
         >
           <FontAwesome5 name="user" size={24} color={userIconColor} />
+          {user && <View style={styles.authBadge} />}
         </Pressable>
 
         <Pressable
           onPressIn={() => setReceiptIconColor(colors.green)}
           onPressOut={() => setReceiptIconColor(colors.yellow)}
           onPress={() => {
-            // Navigate or do something else with receipts
+            // placeholder
           }}
           style={styles.iconButton}
         >
@@ -189,7 +251,7 @@ const Home = () => {
         </AppText>
       </View>
 
-      {/* bottom button */}
+      {/* main bottom button */}
       <View style={styles.bottom}>
         <Pressable
           style={[styles.startButton, { backgroundColor: buttonBgColor }]}
@@ -203,23 +265,22 @@ const Home = () => {
         </Pressable>
       </View>
 
-      {/* privacy policy modal */}
       <Modal
         visible={isPrivacyModalVisible}
-        transparent={true}
+        transparent
         animationType="fade"
         onRequestClose={() => setPrivacyModalVisible(false)}
       >
         <TouchableWithoutFeedback onPress={() => setPrivacyModalVisible(false)}>
-          <View style={styles.modalOverlay}>
+          <View style={styles.privacyModalOverlay}>
             <TouchableWithoutFeedback onPress={() => {}}>
-              <View style={styles.modalContainer}>
+              <View style={styles.privacyModalContainer}>
                 <WebView
                   originWhitelist={["*"]}
-                  source={{ html: /* your htmlContent */ "" }}
+                  source={{ html: htmlContent }}
                   style={styles.webview}
-                  scrollEnabled={true}
-                  nestedScrollEnabled={true}
+                  scrollEnabled={true} // Enable scrolling
+                  nestedScrollEnabled={true} // Needed for Android scrolling inside modals
                 />
               </View>
             </TouchableWithoutFeedback>
@@ -227,6 +288,7 @@ const Home = () => {
         </TouchableWithoutFeedback>
       </Modal>
 
+      {/* sign-in modal */}
       <Modal
         visible={isSignInModalVisible}
         transparent={true}
@@ -236,10 +298,8 @@ const Home = () => {
         <TouchableWithoutFeedback onPress={() => setSignInModalVisible(false)}>
           <View style={styles.modalOverlay}>
             <TouchableWithoutFeedback onPress={() => {}}>
-              <View style={styles.modalContainer}>
-                <GoogleSignInButton
-                  onSuccess={() => setSignInModalVisible(false)}
-                />
+              <View style={[styles.modalContainer, styles.theming]}>
+                {renderAuthContent()}
               </View>
             </TouchableWithoutFeedback>
           </View>
@@ -251,12 +311,23 @@ const Home = () => {
 
 export default Home;
 
+// write comments in lowercase
 const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: colors.yuck,
     alignItems: "center",
     justifyContent: "center",
+  },
+  signedInText: {
+    position: "absolute",
+    top: 80,
+    left: 0,
+    right: 0,
+    textAlign: "center",
+    fontSize: 20,
+    color: "white",
+    zIndex: 99,
   },
   iconRow: {
     flexDirection: "row",
@@ -291,14 +362,14 @@ const styles = StyleSheet.create({
   },
   bottom: {
     position: "absolute",
-    bottom: Dimensions.get("window").width / 4,
+    bottom: screenWidth / 4,
     width: "100%",
     alignItems: "center",
     zIndex: 5,
   },
   startButton: {
-    width: Dimensions.get("window").width * 0.5,
-    height: (Dimensions.get("window").width * 0.5) / 2,
+    width: buttonWidth,
+    height: buttonHeight,
     borderRadius: 5,
     alignItems: "center",
     justifyContent: "center",
@@ -319,14 +390,85 @@ const styles = StyleSheet.create({
   modalContainer: {
     width: "90%",
     height: "40%",
-    backgroundColor: "white",
     borderRadius: 8,
     overflow: "hidden",
     alignItems: "center",
     justifyContent: "center",
     padding: 20,
   },
+  theming: {
+    backgroundColor: colors.yuck,
+    borderWidth: 2,
+    borderColor: colors.yellow,
+  },
   webview: {
     flex: 1,
+    width: "100%",
+  },
+  authContainer: {
+    alignItems: "center",
+    padding: 20,
+    width: "100%",
+  },
+  modalTitle: {
+    color: "white",
+    fontSize: 24,
+    fontWeight: "bold",
+    marginBottom: 20,
+    textAlign: "center",
+  },
+  profileImage: {
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+    marginBottom: 15,
+  },
+  userEmail: {
+    fontSize: 16,
+    marginBottom: 20,
+    color: "white",
+  },
+  signOutButton: {
+    backgroundColor: "#FF0000", // bright red
+    paddingVertical: 12,
+    paddingHorizontal: 25,
+    borderRadius: 8,
+    borderWidth: 2,
+    borderColor: "#8B0000", // dark red border
+  },
+  signOutButtonPressed: {
+    backgroundColor: "#8B0000", // darker red when pressed
+    opacity: 0.8,
+  },
+  signOutText: {
+    color: "white",
+    fontWeight: "600",
+  },
+  googleButtonPressed: {
+    backgroundColor: colors.green,
+  },
+  authBadge: {
+    position: "absolute",
+    top: -3,
+    right: -3,
+    width: 12,
+    height: 12,
+    borderRadius: 6,
+    backgroundColor: colors.green,
+    borderWidth: 2,
+    borderColor: "white",
+  },
+  privacyModalOverlay: {
+    flex: 1,
+    backgroundColor: "rgba(0, 0, 0, 0.5)",
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  privacyModalContainer: {
+    width: "90%", // make it a wide box
+    height: "80%", // make it tall enough to fit the content
+    borderRadius: 10,
+    overflow: "hidden",
+    backgroundColor: "white",
   },
 });

@@ -1,60 +1,73 @@
-import React, { useState } from 'react';
-import { Pressable, View, Text, ActivityIndicator } from 'react-native';
-import * as WebBrowser from 'expo-web-browser';
-import * as Google from 'expo-auth-session/providers/google';
-import { makeRedirectUri } from 'expo-auth-session';
+import React, { useEffect } from 'react';
+import {
+  Pressable,
+  View,
+  Text,
+  ActivityIndicator,
+  Linking,
+  StyleProp,
+  ViewStyle
+} from 'react-native';
 import { auth } from '../firebase';
 import { signInWithCredential, GoogleAuthProvider } from 'firebase/auth';
 import colors from '../../constants/colors';
 import { FontAwesome5 } from '@expo/vector-icons';
 
-WebBrowser.maybeCompleteAuthSession();
+interface GoogleSignInButtonProps {
+  onSuccess: () => void;
+  style?: StyleProp<ViewStyle> | ((state: { pressed: boolean }) => StyleProp<ViewStyle>);
+}
 
-const GoogleSignInButton = ({ onSuccess }: { onSuccess: () => void }) => {
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+const GoogleSignInButton: React.FC<GoogleSignInButtonProps> = ({ onSuccess, style }) => {
+  const [loading, setLoading] = React.useState(false);
+  const [error, setError] = React.useState<string | null>(null);
 
-  const [request, response, promptAsync] = Google.useAuthRequest({
-    clientId: '405450216696-5vuae9eo51ol4grkorih91589g40n8o8.apps.googleusercontent.com', // Web client ID
-    redirectUri: 'https://receipt-splitter-7b372.firebaseapp.com/__/auth/handler', // Match Firebase's URI
-    scopes: ['profile', 'email'],
-  });
+  useEffect(() => {
+    const handleDeepLink = (event: { url: string }) => {
+      try {
+        const url = new URL(event.url);
+        const token = url.searchParams.get('token');
+        
+        if (token) {
+          setLoading(true);
+          const credential = GoogleAuthProvider.credential(token);
+          signInWithCredential(auth, credential)
+            .then(() => {
+              onSuccess();
+              setError(null);
+            })
+            .catch((err) => setError(err.message))
+            .finally(() => setLoading(false));
+        }
+      } catch {
+        setError('Invalid authentication response');
+      }
+    };
 
-  React.useEffect(() => {
-    if (response?.type === 'success') {
-      const { id_token } = response.params;
-      const credential = GoogleAuthProvider.credential(id_token);
-      setLoading(true);
-      signInWithCredential(auth, credential)
-        .then(() => {
-          onSuccess();
-          setLoading(false);
-        })
-        .catch((error) => {
-          setError(error.message);
-          setLoading(false);
-        });
-    }
-  }, [response]);
-
-  const handlePress = () => {
-    setError(null);
-    promptAsync();
-  };
+    const subscription = Linking.addEventListener('url', handleDeepLink);
+    return () => subscription.remove();
+  }, [onSuccess]);
 
   return (
     <View style={{ alignItems: 'center' }}>
       <Pressable
-        onPress={handlePress}
+        onPress={() =>
+          Linking.openURL('https://receiptsplitter.addisonathome.workers.dev/auth')
+        }
         disabled={loading}
-        style={{
-          backgroundColor: colors.yellow,
-          padding: 15,
-          borderRadius: 5,
-          opacity: loading ? 0.7 : 1,
-          flexDirection: 'row',
-          alignItems: 'center',
-        }}
+        style={({ pressed }) => [
+          {
+            // default style
+            backgroundColor: colors.yellow,
+            padding: 15,
+            borderRadius: 5,
+            opacity: loading ? 0.7 : 1,
+            flexDirection: 'row',
+            alignItems: 'center',
+          },
+          // merge user-provided style (so it can override default if pressed)
+          typeof style === 'function' ? style({ pressed }) : style,
+        ]}
       >
         {loading ? (
           <ActivityIndicator color="black" />

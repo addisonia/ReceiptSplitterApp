@@ -22,3 +22,7 @@ required installations to run code:
 - expo install @expo/vector-icons
 - npx expo install expo-auth-session@~4.0.0 expo-web-browser@~12.0.0
 - npm install scheduler@0.23.0 --force
+- npm install -g firebase-tools
+- npm install --save-dev typescript@latest
+- npm install @types/react@latest @types/react-native@latest
+- npm create cloudflare@latest oauth-redirect-worker

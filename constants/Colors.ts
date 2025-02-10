@@ -8,4 +8,6 @@ export default {
   offWhite: 'rgba(244, 244, 244, 0.94)',
   offWhite2: 'rgba(255, 255, 255, 0.78)',
   white: '#fffff',
+  darkGray: 'rgba(56, 56, 56, 0.78)',
+  red: 'rgba(255, 0, 0, 0.78)',
 };
