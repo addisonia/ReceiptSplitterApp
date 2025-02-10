@@ -3,5 +3,6 @@ export type RootStackParamList = {
     MainTabs: undefined;
     Split: undefined;
     Snake: undefined;
+    Receipts: undefined;
     Settings: { itemId: number, otherParams: string}; 
 };

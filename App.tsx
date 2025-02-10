@@ -1,20 +1,19 @@
-import React, { useEffect, useState } from 'react';
-import { registerRootComponent } from 'expo';
-import { NavigationContainer } from '@react-navigation/native';
-import { createNativeStackNavigator } from '@react-navigation/native-stack';
-import { createMaterialTopTabNavigator } from '@react-navigation/material-top-tabs';
-import * as Font from 'expo-font';
-import { View, ActivityIndicator, StatusBar, SafeAreaView } from 'react-native';
-import Home from './src/screens/Home';
-import Split from './src/screens/Split';
-import Snake from './src/screens/Snake';
-import { onAuthStateChanged, User } from 'firebase/auth';
-import { auth } from './src/firebase';
+import React, { useEffect, useState } from "react";
+import { registerRootComponent } from "expo";
+import { NavigationContainer } from "@react-navigation/native";
+import { createNativeStackNavigator } from "@react-navigation/native-stack";
+import { createMaterialTopTabNavigator } from "@react-navigation/material-top-tabs";
+import * as Font from "expo-font";
+import { View, ActivityIndicator, StatusBar, SafeAreaView } from "react-native";
+import Home from "./src/screens/Home";
+import Split from "./src/screens/Split";
+import Snake from "./src/screens/Snake";
+import Receipts from "./src/screens/Receipts";
+import { onAuthStateChanged, User } from "firebase/auth";
+import { auth } from "./src/firebase";
 
 const Tab = createMaterialTopTabNavigator();
 const Stack = createNativeStackNavigator();
-
-
 
 // main tabs for home and split screens
 const MainTabs = () => {
@@ -22,7 +21,7 @@ const MainTabs = () => {
     <Tab.Navigator
       screenOptions={{
         swipeEnabled: true,
-        tabBarStyle: { display: 'none' }, // hide the tab bar
+        tabBarStyle: { display: "none" }, // hide the tab bar
       }}
     >
       <Tab.Screen name="Home" component={Home} />
@@ -37,7 +36,7 @@ export type RootStackParamList = {
 };
 
 const colors = {
-  yuck: '#5c540b',
+  yuck: "#5c540b",
 };
 
 function App() {
@@ -54,10 +53,10 @@ function App() {
   useEffect(() => {
     async function loadFonts() {
       await Font.loadAsync({
-        'Tenorite': require('./assets/fonts/Tenorite.ttf'),
-        'Tenorite-Bold': require('./assets/fonts/Tenorite_B.ttf'),
-        'Tenorite-Italic': require('./assets/fonts/Tenorite_I.ttf'),
-        'Tenorite-BoldItalic': require('./assets/fonts/Tenorite_BI.ttf'),
+        Tenorite: require("./assets/fonts/Tenorite.ttf"),
+        "Tenorite-Bold": require("./assets/fonts/Tenorite_B.ttf"),
+        "Tenorite-Italic": require("./assets/fonts/Tenorite_I.ttf"),
+        "Tenorite-BoldItalic": require("./assets/fonts/Tenorite_BI.ttf"),
       });
       setFontsLoaded(true);
     }
@@ -66,7 +65,7 @@ function App() {
 
   if (!fontsLoaded) {
     return (
-      <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
+      <View style={{ flex: 1, justifyContent: "center", alignItems: "center" }}>
         <ActivityIndicator size="large" />
       </View>
     );
@@ -77,10 +76,21 @@ function App() {
       <StatusBar backgroundColor={colors.yuck} barStyle="light-content" />
       <NavigationContainer>
         <Stack.Navigator screenOptions={{ headerShown: false }}>
-          {/* main tabs is the default screen */}
           <Stack.Screen name="MainTabs" component={MainTabs} />
-          {/* snake game is pushed onto the stack */}
-          <Stack.Screen name="Snake" component={Snake} />
+          <Stack.Screen
+            name="Snake"
+            component={Snake}
+            options={{
+              gestureEnabled: true,
+            }}
+          />
+          <Stack.Screen
+            name="Receipts"
+            component={Receipts}
+            options={{
+              gestureEnabled: true, // enables iOS swipe back
+            }}
+          />
         </Stack.Navigator>
       </NavigationContainer>
     </SafeAreaView>
