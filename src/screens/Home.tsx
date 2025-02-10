@@ -6,7 +6,6 @@ import {
   Dimensions,
   Modal,
   TouchableWithoutFeedback,
-  ScrollView,
 } from "react-native";
 import AppText from "../../components/AppText";
 import { FontAwesome5 } from "@expo/vector-icons";
@@ -15,9 +14,17 @@ import { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { RootStackParamList } from "../types/RootStackParams";
 import colors from "../../constants/colors";
 import { WebView } from "react-native-webview";
+import * as WebBrowser from "expo-web-browser";
+import GoogleSignInButton from "../components/GoogleSignInButton";
+
+WebBrowser.maybeCompleteAuthSession();
+
+type HomeScreenNavigationProp = NativeStackNavigationProp<
+  RootStackParamList,
+  "Home"
+>;
 
 const screenWidth = Dimensions.get("window").width;
-const screenHeight = Dimensions.get("window").height;
 const buttonWidth = screenWidth * 0.5;
 const buttonHeight = buttonWidth / 2;
 
@@ -28,27 +35,27 @@ const htmlContent = `
         body {
           font-family: Arial, sans-serif;
           padding: 20px;
-          font-size: 20px; /* Increased base font size */
-          line-height: 1.8; /* Added better spacing */
+          font-size: 24px; /* increased base font size */
+          line-height: 1.8; /* better spacing */
           color: #333;
         }
         h1 {
-          font-size: 28px; /* Larger header */
+          font-size: 32px; /* larger header */
           color: #222;
         }
         h2 {
-          font-size: 24px; /* Larger sub-header */
+          font-size: 28px; /* larger sub-header */
           color: #222;
         }
         h3 {
-          font-size: 22px;
+          font-size: 26px;
           color: #222;
         }
         p, li {
-          font-size: 20px; /* Increased paragraph & list font size */
+          font-size: 24px; /* increased paragraph & list font size */
         }
         a {
-          font-size: 20px;
+          font-size: 24px;
           color: #0066cc;
           text-decoration: none;
         }
@@ -57,47 +64,47 @@ const htmlContent = `
     <body>
       <h1>Privacy Policy</h1>
       <p>Last updated: February 08, 2025</p>
-      <p>This Privacy Policy describes Our policies and procedures on the collection, use and disclosure of Your information when You use the Service and tells You about Your privacy rights and how the law protects You.</p>
-      <p>We use Your Personal data to provide and improve the Service. By using the Service, You agree to the collection and use of information in accordance with this Privacy Policy.</p>
+      <p>This Privacy Policy describes our policies and procedures on the collection, use and disclosure of your information when you use the service and tells you about your privacy rights and how the law protects you.</p>
+      <p>We use your personal data to provide and improve the service. By using the service, you agree to the collection and use of information in accordance with this Privacy Policy.</p>
 
       <h2>Interpretation and Definitions</h2>
       <h3>Interpretation</h3>
       <p>The words of which the initial letter is capitalized have meanings defined under the following conditions...</p>
 
       <h3>Definitions</h3>
-      <p><strong>Account:</strong> A unique account created for You to access our Service or parts of our Service.</p>
-      <p><strong>Application:</strong> Receipt Splitter, the software program provided by the Company.</p>
+      <p><strong>Account:</strong> A unique account created for you to access our service or parts of our service.</p>
+      <p><strong>Application:</strong> Receipt Splitter, the software program provided by the company.</p>
       <p><strong>Company:</strong> Receipt Splitter.</p>
       <p><strong>Country:</strong> Wisconsin, United States.</p>
-      <p><strong>Device:</strong> Any device that can access the Service such as a computer, a cellphone, or a digital tablet.</p>
+      <p><strong>Device:</strong> Any device that can access the service such as a computer, a cellphone, or a digital tablet.</p>
       <p><strong>Personal Data:</strong> Any information that relates to an identified or identifiable individual.</p>
 
       <h2>Collecting and Using Your Personal Data</h2>
       <h3>Types of Data Collected</h3>
       <h4>Personal Data</h4>
-      <p>While using Our Service, We may ask You to provide Us with certain personally identifiable information...</p>
+      <p>While using our service, we may ask you to provide us with certain personally identifiable information...</p>
 
       <h4>Usage Data</h4>
-      <p>Usage Data is collected automatically when using the Service...</p>
+      <p>Usage Data is collected automatically when using the service...</p>
 
       <h2>Use of Your Personal Data</h2>
-      <p>The Company may use Personal Data for the following purposes:</p>
+      <p>The company may use personal data for the following purposes:</p>
       <ul>
-        <li>To provide and maintain our Service.</li>
-        <li>To manage Your Account.</li>
-        <li>To contact You.</li>
+        <li>To provide and maintain our service.</li>
+        <li>To manage your account.</li>
+        <li>To contact you.</li>
         <li>For business transfers.</li>
-        <li>For other purposes such as data analysis, identifying usage trends, and improving our Service.</li>
+        <li>For other purposes such as data analysis, identifying usage trends, and improving our service.</li>
       </ul>
 
       <h2>Retention of Your Personal Data</h2>
-      <p>The Company will retain Your Personal Data only for as long as is necessary...</p>
+      <p>The company will retain your personal data only for as long as is necessary...</p>
 
       <h2>Delete Your Personal Data</h2>
-      <p>You have the right to delete or request that We assist in deleting the Personal Data that We have collected about You...</p>
+      <p>You have the right to delete or request that we assist in deleting the personal data that we have collected about you...</p>
 
       <h2>Contact Us</h2>
-      <p>If you have any questions about this Privacy Policy, You can contact us:</p>
+      <p>If you have any questions about this Privacy Policy, you can contact us:</p>
       <ul>
         <li>By email: <a href="mailto:officialreceiptsplitter@gmail.com">officialreceiptsplitter@gmail.com</a></li>
         <li>By phone: 608-234-0029</li>
@@ -105,11 +112,6 @@ const htmlContent = `
     </body>
   </html>
 `;
-
-type HomeScreenNavigationProp = NativeStackNavigationProp<
-  RootStackParamList,
-  "Home"
->;
 
 const Home = () => {
   const navigation = useNavigation<HomeScreenNavigationProp>();
@@ -126,15 +128,15 @@ const Home = () => {
   // state to control privacy modal visibility
   const [isPrivacyModalVisible, setPrivacyModalVisible] = useState(false);
 
-  // navigate to snake game when game icon is pressed
   const handleStartSnake = () => {
     navigation.navigate("Snake");
   };
 
-  // navigate to split screen when button is pressed
   const handleStartSplitting = () => {
     navigation.navigate("Split");
   };
+
+  const [isSignInModalVisible, setSignInModalVisible] = useState(false);
 
   return (
     <View style={styles.container}>
@@ -152,9 +154,7 @@ const Home = () => {
         <Pressable
           onPressIn={() => setUserIconColor(colors.green)}
           onPressOut={() => setUserIconColor(colors.yellow)}
-          onPress={() => {
-            // add your user page navigation if needed
-          }}
+          onPress={() => setSignInModalVisible(true)}
           style={styles.iconButton}
         >
           <FontAwesome5 name="user" size={24} color={userIconColor} />
@@ -164,7 +164,7 @@ const Home = () => {
           onPressIn={() => setReceiptIconColor(colors.green)}
           onPressOut={() => setReceiptIconColor(colors.yellow)}
           onPress={() => {
-            // add your receipt page navigation if needed
+            // Navigate or do something else with receipts
           }}
           style={styles.iconButton}
         >
@@ -203,7 +203,7 @@ const Home = () => {
         </Pressable>
       </View>
 
-      {/* Privacy Policy Modal */}
+      {/* privacy policy modal */}
       <Modal
         visible={isPrivacyModalVisible}
         transparent={true}
@@ -216,10 +216,29 @@ const Home = () => {
               <View style={styles.modalContainer}>
                 <WebView
                   originWhitelist={["*"]}
-                  source={{ html: htmlContent }}
+                  source={{ html: /* your htmlContent */ "" }}
                   style={styles.webview}
-                  scrollEnabled={true} /* Enable scrolling inside WebView */
-                  nestedScrollEnabled={true} /* Fix for Android */
+                  scrollEnabled={true}
+                  nestedScrollEnabled={true}
+                />
+              </View>
+            </TouchableWithoutFeedback>
+          </View>
+        </TouchableWithoutFeedback>
+      </Modal>
+
+      <Modal
+        visible={isSignInModalVisible}
+        transparent={true}
+        animationType="fade"
+        onRequestClose={() => setSignInModalVisible(false)}
+      >
+        <TouchableWithoutFeedback onPress={() => setSignInModalVisible(false)}>
+          <View style={styles.modalOverlay}>
+            <TouchableWithoutFeedback onPress={() => {}}>
+              <View style={styles.modalContainer}>
+                <GoogleSignInButton
+                  onSuccess={() => setSignInModalVisible(false)}
                 />
               </View>
             </TouchableWithoutFeedback>
@@ -278,8 +297,8 @@ const styles = StyleSheet.create({
     zIndex: 5,
   },
   startButton: {
-    width: buttonWidth,
-    height: buttonHeight,
+    width: Dimensions.get("window").width * 0.5,
+    height: (Dimensions.get("window").width * 0.5) / 2,
     borderRadius: 5,
     alignItems: "center",
     justifyContent: "center",
@@ -299,13 +318,13 @@ const styles = StyleSheet.create({
   },
   modalContainer: {
     width: "90%",
-    height: "75%",
+    height: "40%",
     backgroundColor: "white",
     borderRadius: 8,
     overflow: "hidden",
-  },
-  scrollView: {
-    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    padding: 20,
   },
   webview: {
     flex: 1,

@@ -8,9 +8,13 @@ import { View, ActivityIndicator, StatusBar, SafeAreaView } from 'react-native';
 import Home from './src/screens/Home';
 import Split from './src/screens/Split';
 import Snake from './src/screens/Snake';
+import { onAuthStateChanged, User } from 'firebase/auth';
+import { auth } from './src/firebase';
 
 const Tab = createMaterialTopTabNavigator();
 const Stack = createNativeStackNavigator();
+
+
 
 // main tabs for home and split screens
 const MainTabs = () => {
@@ -38,6 +42,14 @@ const colors = {
 
 function App() {
   const [fontsLoaded, setFontsLoaded] = useState(false);
+  const [user, setUser] = useState<User | null>(null);
+
+  useEffect(() => {
+    const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
+      setUser(currentUser);
+    });
+    return unsubscribe;
+  }, []);
 
   useEffect(() => {
     async function loadFonts() {

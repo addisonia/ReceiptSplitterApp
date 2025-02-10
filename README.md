@@ -13,6 +13,12 @@ required installations to run code:
 - npm install @react-native-async-storage/async-storage
 - npx expo install react-native-webview
 - npx expo install @react-navigation/native-stack
-
-
-
+- npm install firebase
+- npx expo install expo-auth-session expo-web-browser
+- npm install -g eas-cli
+- npm install expo-auth-session@latest
+- npm install --save-dev @react-native-community/cli
+- expo install expo-auth-session expo-web-browser firebase
+- expo install @expo/vector-icons
+- npx expo install expo-auth-session@~4.0.0 expo-web-browser@~12.0.0
+- npm install scheduler@0.23.0 --force
