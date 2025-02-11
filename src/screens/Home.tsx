@@ -77,7 +77,7 @@ const Home = () => {
   };
 
   const handleStartSplitting = () => {
-    navigation.navigate("Split");
+    navigation.navigate("Split", {});
   };
 
   // helper to render sign-in or sign-out content
@@ -209,7 +209,7 @@ const Home = () => {
             },
           ]}
         >
-          <Text style={styles.bannerText}>Please Sign In To Access Receipts</Text>
+          <Text style={styles.bannerText}>Sign In To Access Receipts</Text>
         </Animated.View>
       )}
 

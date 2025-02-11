@@ -9,6 +9,7 @@ import Home from "./src/screens/Home";
 import Split from "./src/screens/Split";
 import Snake from "./src/screens/Snake";
 import Receipts from "./src/screens/Receipts";
+import ImportReceipts from "./src/screens/ImportReceipts";
 import { onAuthStateChanged, User } from "firebase/auth";
 import { auth } from "./src/firebase";
 
@@ -90,6 +91,11 @@ function App() {
             options={{
               gestureEnabled: true, // enables iOS swipe back
             }}
+          />
+          <Stack.Screen
+            name="ImportReceipts"
+            component={ImportReceipts}
+            options={{ gestureEnabled: true }}
           />
         </Stack.Navigator>
       </NavigationContainer>

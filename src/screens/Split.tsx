@@ -1,5 +1,5 @@
 // src/screens/Split.tsx
-import React, { useState, useRef } from "react";
+import React, { useState, useRef, useEffect } from "react";
 import {
   View,
   Text,
@@ -14,11 +14,15 @@ import {
   KeyboardAvoidingView,
   Platform,
   Pressable,
+  Animated,
 } from "react-native";
 import { FontAwesome5 } from "@expo/vector-icons";
-import { useNavigation } from "@react-navigation/native";
+import { useNavigation, useRoute, RouteProp } from "@react-navigation/native";
+import { auth, database } from "../firebase";
+import { ref, get, set } from "firebase/database";
+import AsyncStorage from "@react-native-async-storage/async-storage";
+import { RootStackParamList } from "../types/RootStackParams";
 
-// colors
 const colors = {
   white: "#ffffff",
   offWhite: "#ede7d8",
@@ -35,14 +39,13 @@ const colors = {
   black: "#000000",
 };
 
-// checkbox component
-const CheckBox = ({
-  value,
-  onValueChange,
-}: {
+// define prop types for our checkbox
+type CheckBoxProps = {
   value: boolean;
   onValueChange: () => void;
-}) => {
+};
+
+const CheckBox: React.FC<CheckBoxProps> = ({ value, onValueChange }) => {
   return (
     <TouchableOpacity
       onPress={onValueChange}
@@ -56,7 +59,6 @@ const CheckBox = ({
   );
 };
 
-// checkbox styles
 const checkboxStyles = StyleSheet.create({
   box: {
     width: 20,
@@ -69,7 +71,7 @@ const checkboxStyles = StyleSheet.create({
   },
 });
 
-// item type
+// define item type
 type ItemType = {
   item: string;
   price: number;
@@ -78,13 +80,29 @@ type ItemType = {
   tempQuantity?: string;
 };
 
-const Split = () => {
-  const navigation = useNavigation<any>(); // removed custom param list
+// define shape of a "Receipt"
+export type ReceiptData = {
+  name: string;
+  items: ItemType[];
+  buyers: { name: string; selected: boolean[] }[];
+  tax: number;
+  time_and_date: string;
+};
 
-  // state
-  const [receiptName, setReceiptName] = useState("");
-  const [receiptNameInput, setReceiptNameInput] = useState("");
-  const [buyerNameInput, setBuyerNameInput] = useState("");
+// define route params
+type ImportedReceiptParam = {
+  importedReceipt?: ReceiptData;
+};
+
+type SplitRouteProp = RouteProp<RootStackParamList, "Split">;
+
+const Split = () => {
+  const navigation = useNavigation<any>();
+  const route = useRoute<SplitRouteProp>();
+  const { importedReceipt } = route.params || {};
+
+  // single piece of state for receipt name
+  const [receiptName, setReceiptName] = useState("untitled receipt");
   const [buyers, setBuyers] = useState<{ name: string; selected: boolean[] }[]>(
     []
   );
@@ -97,52 +115,231 @@ const Split = () => {
   const [darkMode, setDarkMode] = useState(false);
   const [splitTaxEvenly, setSplitTaxEvenly] = useState(true);
 
-  // references for focusing text inputs
+  // references
   const buyerRef = useRef<TextInput | null>(null);
   const itemNameRef = useRef<TextInput | null>(null);
   const priceRef = useRef<TextInput | null>(null);
 
-  // navigation
-  const goHome = () => {
-    navigation.navigate("Home");
-  };
+  // sign in banner
+  const [showSignInBanner, setShowSignInBanner] = useState(false);
+  const [bannerOpacity] = useState(new Animated.Value(0));
 
-  // receipt name
-  const handleAddReceiptName = () => {
-    setReceiptName(receiptNameInput.trim() || "placeholder");
-    setReceiptNameInput("");
-  };
+  // save button color
+  const [saveButtonColor, setSaveButtonColor] = useState(colors.yellow);
 
-  // add buyer
-  const handleAddBuyer = () => {
-    const name = buyerNameInput.trim();
-    if (!name) return;
-    let newName = name;
-    let duplicateCount = 1;
+  // import button color
+  const [importButtonColor, setImportButtonColor] = useState(colors.yellow);
 
-    while (buyers.find((b) => b.name === newName)) {
-      duplicateCount++;
-      newName = `${name} (${duplicateCount})`;
-    }
-    const newBuyer = { name: newName, selected: [] };
-    setBuyers((prev) => [...prev, newBuyer]);
+  // success banner for "Receipt Saved"
+  const [showSavedBanner, setShowSavedBanner] = useState(false);
+  const [savedBannerOpacity] = useState(new Animated.Value(0));
 
-    // also add this buyer to all existing items
-    setItems((prevItems) =>
-      prevItems.map((item) => ({
-        ...item,
-        buyers: [
-          ...item.buyers,
-          { name: newName, selected: Array(item.quantity).fill(true) },
-        ],
-      }))
-    );
+  // local storage key for caching
+  const SPLIT_STORAGE_KEY = "@split_state";
 
-    setBuyerNameInput("");
-    // keep focus in the buyer text box
+  // 2. save to cache whenever states change
+  useEffect(() => {
+    const saveToCache = async () => {
+      try {
+        const dataToStore = {
+          receiptName,
+          buyers,
+          tax,
+          items,
+        };
+        await AsyncStorage.setItem(
+          SPLIT_STORAGE_KEY,
+          JSON.stringify(dataToStore)
+        );
+      } catch (error) {
+        console.log("Failed to save to cache:", error);
+      }
+    };
+    saveToCache();
+  }, [receiptName, buyers, tax, items]);
+
+  useEffect(() => {
+    const loadData = async () => {
+      try {
+        // first, see if there are route params
+        if (route.params?.importedReceipt) {
+          console.log("Using route.params.importedReceipt");
+          const safeItems = (route.params.importedReceipt.items ?? []).map(
+            (it: ItemType) => {
+              let safeQuantity = it.quantity;
+              if (
+                typeof safeQuantity !== "number" ||
+                isNaN(safeQuantity) ||
+                safeQuantity < 1
+              ) {
+                safeQuantity = 1;
+              }
+              return { ...it, quantity: safeQuantity };
+            }
+          );
+
+          setReceiptName(
+            route.params.importedReceipt.name || "untitled receipt"
+          );
+          setBuyers(route.params.importedReceipt.buyers || []);
+          setItems(safeItems);
+          setTax(route.params.importedReceipt.tax || 0);
+        } else {
+          // no route params -> try local storage
+          console.log("No route params, trying local storage");
+          const storedData = await AsyncStorage.getItem(SPLIT_STORAGE_KEY);
+          if (storedData) {
+            const parsed = JSON.parse(storedData);
+            setReceiptName(parsed.receiptName ?? "untitled receipt");
+            setBuyers(parsed.buyers ?? []);
+            setTax(parsed.tax ?? 0);
+            setItems(parsed.items ?? []);
+          } else {
+            // nothing in local storage
+            setReceiptName("untitled receipt");
+            setBuyers([]);
+            setItems([]);
+            setTax(0);
+          }
+        }
+      } catch (error) {
+        console.log("Failed to load data:", error);
+      }
+    };
+
+    loadData();
+    // you can include [] as deps so it only runs once
+  }, []);
+
+  //save to cache
+  useEffect(() => {
+    const saveToCache = async () => {
+      try {
+        const dataToStore = {
+          receiptName,
+          buyers,
+          tax,
+          items,
+        };
+        await AsyncStorage.setItem(
+          SPLIT_STORAGE_KEY,
+          JSON.stringify(dataToStore)
+        );
+      } catch (error) {
+        console.log("Failed to save to cache:", error);
+      }
+    };
+    saveToCache();
+  }, [receiptName, buyers, tax, items]);
+
+  // fade out sign-in banner
+  const fadeOutBanner = () => {
     setTimeout(() => {
-      buyerRef.current?.focus();
-    }, 0);
+      Animated.timing(bannerOpacity, {
+        toValue: 0,
+        duration: 300,
+        useNativeDriver: true,
+      }).start(() => {
+        setShowSignInBanner(false);
+        setSaveButtonColor(colors.yellow);
+        setImportButtonColor(colors.yellow);
+      });
+    }, 1500);
+  };
+
+  // fade in/out "Receipt Saved"
+  const showReceiptSavedBanner = () => {
+    setShowSavedBanner(true);
+    savedBannerOpacity.setValue(0);
+    // fade in
+    Animated.timing(savedBannerOpacity, {
+      toValue: 1,
+      duration: 300,
+      useNativeDriver: true,
+    }).start(() => {
+      // fade out after ~1.5s
+      setTimeout(() => {
+        Animated.timing(savedBannerOpacity, {
+          toValue: 0,
+          duration: 300,
+          useNativeDriver: true,
+        }).start(() => {
+          setShowSavedBanner(false);
+        });
+      }, 1500);
+    });
+  };
+
+  // handle save
+  const handleSaveReceipt = async () => {
+    if (!auth.currentUser) {
+      // user not signed in
+      setShowSignInBanner(true);
+      setSaveButtonColor("red");
+      Animated.timing(bannerOpacity, {
+        toValue: 1,
+        duration: 300,
+        useNativeDriver: true,
+      }).start(fadeOutBanner);
+      return;
+    }
+
+    // user is signed in
+    setSaveButtonColor(colors.green);
+    setTimeout(() => setSaveButtonColor(colors.yellow), 100);
+
+    try {
+      const userId = auth.currentUser.uid;
+      let finalReceiptName = receiptName.trim() || "untitled receipt";
+
+      // read all receipts to see if finalReceiptName already exists
+      const userReceiptsRef = ref(database, `receipts/${userId}`);
+      const snapshot = await get(userReceiptsRef);
+
+      if (snapshot.exists()) {
+        let suffix = 1;
+        let candidateName = finalReceiptName;
+        while (snapshot.child(candidateName).exists()) {
+          suffix++;
+          candidateName = `${finalReceiptName} (${suffix})`;
+        }
+        finalReceiptName = candidateName;
+      }
+
+      const receiptRef = ref(
+        database,
+        `receipts/${userId}/${finalReceiptName}`
+      );
+      await set(receiptRef, {
+        name: finalReceiptName,
+        items,
+        buyers,
+        tax,
+        time_and_date: new Date().toISOString(),
+      });
+
+      showReceiptSavedBanner();
+    } catch (error) {
+      console.log("Save error:", error);
+      setSaveButtonColor(colors.yellow);
+      Alert.alert("Error", "Failed to save receipt.");
+    }
+  };
+
+  // handle import
+  const handleImportReceipt = () => {
+    if (!auth.currentUser) {
+      // user not signed in
+      setShowSignInBanner(true);
+      setImportButtonColor("red");
+      Animated.timing(bannerOpacity, {
+        toValue: 1,
+        duration: 300,
+        useNativeDriver: true,
+      }).start(fadeOutBanner);
+      return;
+    }
+    navigation.navigate("ImportReceipts");
   };
 
   // add tax
@@ -164,6 +361,7 @@ const Split = () => {
       Alert.alert("Invalid Price", "Please enter a valid price.");
       return;
     }
+
     const newItem: ItemType = {
       item: name,
       price,
@@ -175,17 +373,17 @@ const Split = () => {
     setItemPriceInput("");
   };
 
-  // finalize quantity after blur
+  // finalize quantity
   const finalizeQuantity = (itemIndex: number) => {
-    setItems((prevItems) => {
-      return prevItems.map((item, idx) => {
+    setItems((prevItems) =>
+      prevItems.map((item, idx) => {
         if (idx !== itemIndex) return item;
         const finalVal = item.tempQuantity ?? item.quantity.toString();
         const newQuantity = parseInt(finalVal, 10);
 
         if (isNaN(newQuantity) || newQuantity < 1) {
           const { tempQuantity, ...rest } = item;
-          return rest;
+          return { ...rest, quantity: 1 }; // default to 1 if invalid
         }
         const updatedBuyers = item.buyers.map((buyer) => {
           const newSelected = buyer.selected.slice(0, newQuantity);
@@ -200,8 +398,8 @@ const Split = () => {
           buyers: updatedBuyers,
           tempQuantity: undefined,
         };
-      });
-    });
+      })
+    );
   };
 
   // checkbox toggling
@@ -224,7 +422,37 @@ const Split = () => {
     );
   };
 
-  // calculate how much each buyer owes
+  // buyer input
+  const [buyerNameInput, setBuyerNameInput] = useState("");
+  const handleAddBuyer = () => {
+    const name = buyerNameInput.trim();
+    if (!name) return;
+    let newName = name;
+    let duplicateCount = 1;
+
+    while (buyers.find((b) => b.name === newName)) {
+      duplicateCount++;
+      newName = `${name} (${duplicateCount})`;
+    }
+    const newBuyer = { name: newName, selected: [] };
+    setBuyers((prev) => [...prev, newBuyer]);
+
+    // also add buyer to existing items
+    setItems((prevItems) =>
+      prevItems.map((item) => ({
+        ...item,
+        buyers: [
+          ...item.buyers,
+          { name: newName, selected: Array(item.quantity).fill(true) },
+        ],
+      }))
+    );
+
+    setBuyerNameInput("");
+    setTimeout(() => buyerRef.current?.focus(), 0);
+  };
+
+  // each buyer owes
   const calculateBuyerOwes = () => {
     const buyerTotals = buyers.map(() => 0);
     let totalCostWithoutTax = 0;
@@ -246,16 +474,16 @@ const Split = () => {
 
     if (buyers.length === 0) return buyerTotals;
 
-    // if no items but there's tax, split evenly
+    // no items but there's tax => split evenly
     if (items.length === 0 && tax > 0) {
       const taxPerBuyer = tax / buyers.length;
       return buyerTotals.map((total) => total + taxPerBuyer);
     } else if (splitTaxEvenly) {
-      // if user wants to split tax evenly
+      // user wants to split tax evenly
       const taxPerBuyer = tax / buyers.length;
       return buyerTotals.map((total) => total + taxPerBuyer);
     } else {
-      // otherwise split tax proportionally
+      // split tax proportionally
       if (totalCostWithoutTax > 0) {
         return buyerTotals.map((total) => {
           if (total === 0) return total;
@@ -269,7 +497,7 @@ const Split = () => {
 
   const buyerTotals = calculateBuyerOwes();
 
-  // total cost
+  // total
   const calculateTotalCost = () => {
     let total = 0;
     items.forEach((item) => {
@@ -280,10 +508,16 @@ const Split = () => {
 
   // clear data
   const handleClearData = () => {
-    setReceiptName("");
+    setReceiptName("untitled receipt");
     setBuyers([]);
     setItems([]);
     setTax(0);
+  };
+
+  // navigation
+  const goHome = () => {
+    // instead of navigation.navigate("Home")
+    navigation.navigate("MainTabs", { screen: "Home" });
   };
 
   return (
@@ -291,10 +525,32 @@ const Split = () => {
       style={[styles.container, darkMode ? darkStyles.container : null]}
       behavior={Platform.OS === "ios" ? "padding" : undefined}
     >
+      {/* sign-in banner */}
+      {showSignInBanner && (
+        <Animated.View
+          style={[styles.signInBanner, { opacity: bannerOpacity }]}
+        >
+          <Text style={styles.signInBannerText}>
+            {importButtonColor === "red"
+              ? "Sign In To Import Receipts"
+              : "Sign In To Save Receipts"}
+          </Text>
+        </Animated.View>
+      )}
+
+      {/* "Receipt Saved" banner */}
+      {showSavedBanner && (
+        <Animated.View
+          style={[styles.savedBanner, { opacity: savedBannerOpacity }]}
+        >
+          <Text style={styles.savedBannerText}>Receipt Saved</Text>
+        </Animated.View>
+      )}
+
       <ScrollView contentContainerStyle={styles.scrollContent}>
         {/* top buttons */}
         <View style={styles.topButtonsContainer}>
-          {/* home button */}
+          {/* home */}
           <Pressable style={styles.topButton} onPress={goHome}>
             {({ pressed }) => (
               <FontAwesome5
@@ -305,25 +561,69 @@ const Split = () => {
             )}
           </Pressable>
 
-          {/* clear data + settings */}
-          <View style={{ flexDirection: "row" }}>
+          {/* import / save / reset / settings */}
+          <View style={{ flexDirection: "row", alignItems: "center" }}>
+            {/* import */}
+            <Pressable
+              style={({ pressed }) => [
+                styles.topButton,
+                {
+                  backgroundColor: pressed
+                    ? colors.lightGray
+                    : importButtonColor,
+                  borderWidth: 1,
+                  borderColor: colors.black,
+                  marginRight: 10,
+                  justifyContent: "center",
+                  paddingHorizontal: 10,
+                },
+              ]}
+              onPress={handleImportReceipt}
+            >
+              <Text style={[styles.buttonText, { color: colors.black }]}>
+                Import
+              </Text>
+            </Pressable>
+
+            {/* save */}
+            <Pressable
+              style={({ pressed }) => [
+                styles.topButton,
+                {
+                  backgroundColor: pressed ? colors.lightGray : saveButtonColor,
+                  borderWidth: 1,
+                  borderColor: colors.black,
+                  marginRight: 10,
+                  justifyContent: "center",
+                  paddingHorizontal: 10,
+                },
+              ]}
+              onPress={handleSaveReceipt}
+            >
+              <Text style={[styles.buttonText, { color: colors.black }]}>
+                Save
+              </Text>
+            </Pressable>
+
+            {/* reset */}
             <Pressable
               style={({ pressed }) => [
                 styles.topButton,
                 styles.clearDataButton,
                 {
                   backgroundColor: pressed ? colors.green : colors.yellow,
-                  marginRight: 80,
+                  marginRight: 40,
                   justifyContent: "center",
                 },
               ]}
               onPress={handleClearData}
             >
               <Text style={[styles.buttonText, { color: colors.black }]}>
-                Clear Data
+                Reset
               </Text>
             </Pressable>
 
+            {/* settings */}
             <Pressable
               style={styles.settingsButton}
               onPress={() => setShowSettings(true)}
@@ -339,48 +639,25 @@ const Split = () => {
           </View>
         </View>
 
-        {/* receipt name */}
+        {/* receipt name text input */}
         <View
           style={[
             styles.receiptNameContainer,
             darkMode ? darkStyles.receiptNameContainer : null,
           ]}
         >
-          <Text
-            style={[
-              styles.alignedLabel,
-              { color: darkMode ? colors.white : colors.black },
-            ]}
-          >
-            Receipt Name:
-          </Text>
           <TextInput
             style={[
               styles.inputField,
               { flex: 1 },
               darkMode ? darkStyles.inputField : null,
             ]}
-            placeholder="optional"
-            placeholderTextColor={darkMode ? "#999" : "#000"}
-            value={receiptNameInput}
-            onChangeText={setReceiptNameInput}
-            onSubmitEditing={handleAddReceiptName}
-            returnKeyType="done"
+            value={receiptName}
+            onChangeText={setReceiptName}
           />
-          <Pressable
-            onPress={handleAddReceiptName}
-            style={({ pressed }) => [
-              styles.addButton,
-              styles.borderBlack,
-              styles.addReceiptButton,
-              { backgroundColor: pressed ? colors.green : colors.yellow },
-            ]}
-          >
-            <Text style={styles.buttonText}>Add</Text>
-          </Pressable>
         </View>
 
-        {/* buyers & tax row */}
+        {/* buyers + tax row */}
         <View style={styles.rowContainer}>
           {/* buyers form */}
           <View
@@ -485,7 +762,6 @@ const Split = () => {
               value={itemNameInput}
               onChangeText={setItemNameInput}
               onSubmitEditing={() => {
-                // Pressing Enter -> move focus to price
                 priceRef.current?.focus();
               }}
               returnKeyType="next"
@@ -500,7 +776,6 @@ const Split = () => {
               onChangeText={setItemPriceInput}
               keyboardType="numeric"
               onSubmitEditing={() => {
-                // Pressing Enter -> add item, re-focus itemName
                 handleSubmitItem();
                 setTimeout(() => itemNameRef.current?.focus(), 0);
               }}
@@ -510,7 +785,6 @@ const Split = () => {
           <Pressable
             onPress={() => {
               handleSubmitItem();
-              // after pressing Add, focus itemName
               setTimeout(() => itemNameRef.current?.focus(), 0);
             }}
             style={({ pressed }) => [
@@ -560,14 +834,15 @@ const Split = () => {
           )}
         </View>
 
-        {/* tax & total cost displays */}
+        {/* tax & total */}
         <Text
           style={[
             styles.displayText,
             { color: darkMode ? colors.white : colors.black },
           ]}
         >
-          <Text style={{ fontWeight: "bold" }}>Tax Amount:</Text> ${tax.toFixed(2)}
+          <Text style={{ fontWeight: "bold" }}>Tax Amount:</Text> $
+          {tax.toFixed(2)}
         </Text>
         <Text
           style={[
@@ -580,7 +855,9 @@ const Split = () => {
         </Text>
 
         {/* grid titles */}
-        <View style={[styles.gridTitles, darkMode ? darkStyles.gridTitles : null]}>
+        <View
+          style={[styles.gridTitles, darkMode ? darkStyles.gridTitles : null]}
+        >
           <Text
             style={[
               styles.gridCell,
@@ -624,14 +901,11 @@ const Split = () => {
           </Text>
         </View>
 
-        {/* display grid items */}
+        {/* items */}
         {items.map((item, itemIndex) => (
           <View
             key={itemIndex}
-            style={[
-              styles.gridRow,
-              darkMode ? darkStyles.gridRow : null,
-            ]}
+            style={[styles.gridRow, darkMode ? darkStyles.gridRow : null]}
           >
             <View
               style={[
@@ -644,7 +918,9 @@ const Split = () => {
               <View style={styles.cellInner}>
                 <TouchableOpacity
                   onPress={() =>
-                    setItems((prev) => prev.filter((_, idx) => idx !== itemIndex))
+                    setItems((prev) =>
+                      prev.filter((_, idx) => idx !== itemIndex)
+                    )
                   }
                   style={styles.trashIcon}
                 >
@@ -732,13 +1008,19 @@ const Split = () => {
                         <CheckBox
                           value={buyer.selected[qtyIndex]}
                           onValueChange={() =>
-                            toggleBuyerSelection(itemIndex, buyerIndex, qtyIndex)
+                            toggleBuyerSelection(
+                              itemIndex,
+                              buyerIndex,
+                              qtyIndex
+                            )
                           }
                         />
                         <Text
                           style={[
                             styles.buyerLabel,
-                            { color: darkMode ? colors.offWhite2 : colors.black },
+                            {
+                              color: darkMode ? colors.offWhite2 : colors.black,
+                            },
                           ]}
                         >
                           {buyer.name}
@@ -799,7 +1081,6 @@ const Split = () => {
 
 export default Split;
 
-// styles
 const styles = StyleSheet.create({
   container: {
     flex: 1,
@@ -831,23 +1112,24 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: "bold",
   },
+
+  // name container
   receiptNameContainer: {
     backgroundColor: colors.lightGray2,
     padding: 25,
     marginBottom: 10,
-    flexDirection: "row",
-    alignItems: "center",
   },
-  alignedLabel: {
-    marginRight: 10,
-    fontSize: 16,
-  },
+
   inputField: {
     borderWidth: 1,
     borderColor: colors.gray1,
     padding: 5,
     backgroundColor: colors.offWhite2,
     color: colors.black,
+  },
+  alignedLabel: {
+    marginRight: 10,
+    fontSize: 16,
   },
   addButton: {
     padding: 5,
@@ -858,9 +1140,6 @@ const styles = StyleSheet.create({
   borderBlack: {
     borderWidth: 1,
     borderColor: colors.black,
-  },
-  addReceiptButton: {
-    marginLeft: 10,
   },
   addBuyersTaxButtons: {
     marginTop: 10,
@@ -1048,9 +1327,39 @@ const styles = StyleSheet.create({
     alignItems: "center",
     marginTop: 15,
   },
+
+  // sign in banner
+  signInBanner: {
+    position: "absolute",
+    width: "100%",
+    top: 60,
+    backgroundColor: "red",
+    padding: 8,
+    zIndex: 10,
+  },
+  signInBannerText: {
+    color: "#fff",
+    fontWeight: "600",
+    textAlign: "center",
+  },
+
+  // receipt saved banner
+  savedBanner: {
+    position: "absolute",
+    width: "100%",
+    top: 100,
+    backgroundColor: "green",
+    padding: 8,
+    zIndex: 10,
+  },
+  savedBannerText: {
+    color: "#fff",
+    fontWeight: "600",
+    textAlign: "center",
+  },
 });
 
-// dark theme overrides
+// dark mode overrides
 const darkStyles = StyleSheet.create({
   container: {
     backgroundColor: "#1d1d1d",
@@ -1083,7 +1392,7 @@ const darkStyles = StyleSheet.create({
   },
   quantityInput: {
     borderColor: "#1d1d1d",
-    backgroundColor: "#1d1d1d", // match dark background
+    backgroundColor: "#1d1d1d",
     color: colors.offWhite2,
   },
 });
