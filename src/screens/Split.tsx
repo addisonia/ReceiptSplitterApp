@@ -115,6 +115,7 @@ const Split = () => {
   const [showSettings, setShowSettings] = useState(false);
   const [darkMode, setDarkMode] = useState(false);
   const [splitTaxEvenly, setSplitTaxEvenly] = useState(true);
+  const [isEditingReceiptName, setIsEditingReceiptName] = useState(false);
 
   // references
   const buyerRef = useRef<TextInput | null>(null);
@@ -153,7 +154,7 @@ const Split = () => {
           JSON.stringify(dataToStore)
         );
       } catch (error) {
-        console.log("Failed to save to cache:", error);
+        console.log("failed to save to cache:", error);
       }
     };
     saveToCache();
@@ -164,7 +165,7 @@ const Split = () => {
     const loadData = async () => {
       try {
         if (route.params?.importedReceipt) {
-          console.log("Using route.params.importedReceipt");
+          console.log("using route.params.importedReceipt");
           // fix items to have a safe quantity
           const safeItems = (route.params.importedReceipt.items ?? []).map(
             (it: ItemType) => {
@@ -187,7 +188,7 @@ const Split = () => {
           setItems(safeItems);
           setTax(route.params.importedReceipt.tax || 0);
         } else {
-          console.log("No route params, trying local storage");
+          console.log("no route params, trying local storage");
           const storedData = await AsyncStorage.getItem(SPLIT_STORAGE_KEY);
           if (storedData) {
             const parsed = JSON.parse(storedData);
@@ -203,7 +204,7 @@ const Split = () => {
           }
         }
       } catch (error) {
-        console.log("Failed to load data:", error);
+        console.log("failed to load data:", error);
       }
     };
 
@@ -225,7 +226,7 @@ const Split = () => {
           JSON.stringify(dataToStore)
         );
       } catch (error) {
-        console.log("Failed to save to cache:", error);
+        console.log("failed to save to cache:", error);
       }
     };
     saveToCache();
@@ -314,9 +315,9 @@ const Split = () => {
 
       showReceiptSavedBanner();
     } catch (error) {
-      console.log("Save error:", error);
+      console.log("save error:", error);
       setSaveButtonColor(colors.yellow);
-      Alert.alert("Error", "Failed to save receipt.");
+      Alert.alert("Error", "failed to save receipt.");
     }
   };
 
@@ -351,7 +352,7 @@ const Split = () => {
       price = eval(itemPriceInput);
       if (isNaN(price) || price <= 0) throw new Error();
     } catch {
-      Alert.alert("Invalid Price", "Please enter a valid price.");
+      Alert.alert("Invalid Price", "please enter a valid price.");
       return;
     }
 
@@ -456,7 +457,9 @@ const Split = () => {
         if (selectedBuyers.length === 0) continue;
         const itemCostPerBuyer = item.price / selectedBuyers.length;
         selectedBuyers.forEach((b) => {
-          const buyerIndex = buyers.findIndex((buyer) => buyer.name === b.name);
+          const buyerIndex = buyers.findIndex(
+            (buyer) => buyer.name === b.name
+          );
           if (buyerIndex !== -1) {
             buyerTotals[buyerIndex] += itemCostPerBuyer;
             totalCostWithoutTax += itemCostPerBuyer;
@@ -512,7 +515,7 @@ const Split = () => {
     navigation.navigate("MainTabs", { screen: "Home" });
   };
 
-  // Safe string function to avoid crashing if old data is an object
+  // safe string function to avoid crashing if old data is an object
   function safeString(val: any) {
     return typeof val === "string" ? val : JSON.stringify(val);
   }
@@ -524,9 +527,7 @@ const Split = () => {
     >
       {/* sign-in banner */}
       {showSignInBanner && (
-        <Animated.View
-          style={[styles.signInBanner, { opacity: bannerOpacity }]}
-        >
+        <Animated.View style={[styles.signInBanner, { opacity: bannerOpacity }]}>
           <Text style={styles.signInBannerText}>
             {importButtonColor === "red"
               ? "Sign In To Import Receipts"
@@ -537,9 +538,7 @@ const Split = () => {
 
       {/* "Receipt Saved" banner */}
       {showSavedBanner && (
-        <Animated.View
-          style={[styles.savedBanner, { opacity: savedBannerOpacity }]}
-        >
+        <Animated.View style={[styles.savedBanner, { opacity: savedBannerOpacity }]}>
           <Text style={styles.savedBannerText}>Receipt Saved</Text>
         </Animated.View>
       )}
@@ -565,9 +564,7 @@ const Split = () => {
               style={({ pressed }) => [
                 styles.topButton,
                 {
-                  backgroundColor: pressed
-                    ? colors.lightGray
-                    : importButtonColor,
+                  backgroundColor: pressed ? colors.lightGray : importButtonColor,
                   borderWidth: 1,
                   borderColor: colors.black,
                   paddingHorizontal: 10,
@@ -617,10 +614,7 @@ const Split = () => {
           </View>
 
           {/* Settings Button */}
-          <Pressable
-            style={styles.topButton}
-            onPress={() => setShowSettings(true)}
-          >
+          <Pressable style={styles.topButton} onPress={() => setShowSettings(true)}>
             {({ pressed }) => (
               <FontAwesome5
                 name="cog"
@@ -631,22 +625,60 @@ const Split = () => {
           </Pressable>
         </View>
 
-        {/* receipt name text input */}
+        {/* receipt name area */}
         <View
           style={[
             styles.receiptNameContainer,
             darkMode ? darkStyles.receiptNameContainer : null,
           ]}
         >
-          <TextInput
-            style={[
-              styles.inputField,
-              { flex: 1 },
-              darkMode ? darkStyles.inputField : null,
-            ]}
-            value={receiptName}
-            onChangeText={setReceiptName}
-          />
+          {isEditingReceiptName ? (
+            <View style={{ position: "relative", width: "100%" }}>
+              <View style={{ alignItems: "center" }}>
+                <TextInput
+                  style={[
+                    styles.inputField,
+                    { width: "80%", textAlign: "center" },
+                    darkMode ? darkStyles.inputField : null,
+                  ]}
+                  value={receiptName}
+                  onChangeText={setReceiptName}
+                  autoFocus
+                  onBlur={() => setIsEditingReceiptName(false)}
+                />
+              </View>
+              {/* The checkmark is positioned halfway between the right edge of the text input (10% margin)
+                  and the right side of the screen (0 margin). */}
+              <TouchableOpacity
+                onPress={() => setIsEditingReceiptName(false)}
+                style={{
+                  position: "absolute",
+                  right: "0%",
+                  top: "50%",
+                  transform: [{ translateY: -10 }],
+                }}
+              >
+                <FontAwesome5 name="check" size={20} color={colors.black} />
+              </TouchableOpacity>
+            </View>
+          ) : (
+            <View style={{ position: "relative", width: "100%", alignItems: "center" }}>
+              <Text style={{ textAlign: "center", fontSize: 18, color: colors.black }}>
+                {receiptName}
+              </Text>
+              <TouchableOpacity
+                onPress={() => setIsEditingReceiptName(true)}
+                style={{
+                  position: "absolute",
+                  right: 15,
+                  top: "50%",
+                  transform: [{ translateY: -10 }],
+                }}
+              >
+                <FontAwesome5 name="pencil-alt" size={20} color={colors.black} />
+              </TouchableOpacity>
+            </View>
+          )}
         </View>
 
         {/* buyers + tax row */}
@@ -811,7 +843,7 @@ const Split = () => {
                   { color: darkMode ? colors.white : colors.black },
                 ]}
               >
-                {/** SAFE PRINT: if buyer.name isn't a string, show JSON */}
+                {/** safe print: if buyer.name isn't a string, show json */}
                 {safeString(buyer.name)}: $
                 {buyerTotals[index]?.toFixed(2) || "0.00"}
               </Text>
@@ -847,9 +879,7 @@ const Split = () => {
         </Text>
 
         {/* grid titles */}
-        <View
-          style={[styles.gridTitles, darkMode ? darkStyles.gridTitles : null]}
-        >
+        <View style={[styles.gridTitles, darkMode ? darkStyles.gridTitles : null]}>
           <Text
             style={[
               styles.gridCell,
@@ -924,7 +954,7 @@ const Split = () => {
                     { color: darkMode ? colors.offWhite2 : colors.black },
                   ]}
                 >
-                  {/** SAFE PRINT: if item.item isn't a string, show JSON */}
+                  {/** safe print: if item.item isn't a string, show json */}
                   {safeString(item.item)}
                 </Text>
               </View>
@@ -1074,7 +1104,7 @@ const Split = () => {
 
 export default Split;
 
-/** STYLES */
+/** styles */
 const styles = StyleSheet.create({
   container: {
     flex: 1,
