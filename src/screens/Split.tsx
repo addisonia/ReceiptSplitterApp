@@ -73,12 +73,12 @@ const checkboxStyles = StyleSheet.create({
 });
 
 type BuyerObject = {
-  name: string | any;        // sometimes might be an object from old data
+  name: string | any; // sometimes might be an object from old data
   selected: boolean[];
 };
 
 type ItemType = {
-  item: string | any;        // sometimes might be an object from old data
+  item: string | any; // sometimes might be an object from old data
   price: number;
   quantity: number;
   buyers: BuyerObject[];
@@ -524,7 +524,9 @@ const Split = () => {
     >
       {/* sign-in banner */}
       {showSignInBanner && (
-        <Animated.View style={[styles.signInBanner, { opacity: bannerOpacity }]}>
+        <Animated.View
+          style={[styles.signInBanner, { opacity: bannerOpacity }]}
+        >
           <Text style={styles.signInBannerText}>
             {importButtonColor === "red"
               ? "Sign In To Import Receipts"
@@ -535,7 +537,9 @@ const Split = () => {
 
       {/* "Receipt Saved" banner */}
       {showSavedBanner && (
-        <Animated.View style={[styles.savedBanner, { opacity: savedBannerOpacity }]}>
+        <Animated.View
+          style={[styles.savedBanner, { opacity: savedBannerOpacity }]}
+        >
           <Text style={styles.savedBannerText}>Receipt Saved</Text>
         </Animated.View>
       )}
@@ -543,7 +547,7 @@ const Split = () => {
       <ScrollView contentContainerStyle={styles.scrollContent}>
         {/* top buttons */}
         <View style={styles.topButtonsContainer}>
-          {/* home */}
+          {/* Home Button */}
           <Pressable style={styles.topButton} onPress={goHome}>
             {({ pressed }) => (
               <FontAwesome5
@@ -554,27 +558,29 @@ const Split = () => {
             )}
           </Pressable>
 
-          {/* import / save / reset / settings */}
-          <View style={{ flexDirection: "row", alignItems: "center" }}>
-            {/* import */}
+          {/* Center Buttons Container */}
+          <View style={styles.centerButtonsContainer}>
+            {/* Import */}
             <Pressable
               style={({ pressed }) => [
                 styles.topButton,
                 {
-                  backgroundColor: pressed ? colors.lightGray : importButtonColor,
+                  backgroundColor: pressed
+                    ? colors.lightGray
+                    : importButtonColor,
                   borderWidth: 1,
                   borderColor: colors.black,
-                  marginRight: 10,
-                  justifyContent: "center",
                   paddingHorizontal: 10,
                 },
               ]}
               onPress={handleImportReceipt}
             >
-              <Text style={[styles.buttonText, { color: colors.black }]}>Import</Text>
+              <Text style={[styles.buttonText, { color: colors.black }]}>
+                Import
+              </Text>
             </Pressable>
 
-            {/* save */}
+            {/* Save */}
             <Pressable
               style={({ pressed }) => [
                 styles.topButton,
@@ -582,46 +588,47 @@ const Split = () => {
                   backgroundColor: pressed ? colors.lightGray : saveButtonColor,
                   borderWidth: 1,
                   borderColor: colors.black,
-                  marginRight: 10,
-                  justifyContent: "center",
                   paddingHorizontal: 10,
+                  marginHorizontal: 10,
                 },
               ]}
               onPress={handleSaveReceipt}
             >
-              <Text style={[styles.buttonText, { color: colors.black }]}>Save</Text>
+              <Text style={[styles.buttonText, { color: colors.black }]}>
+                Save
+              </Text>
             </Pressable>
 
-            {/* reset */}
+            {/* Reset */}
             <Pressable
               style={({ pressed }) => [
                 styles.topButton,
                 styles.clearDataButton,
                 {
                   backgroundColor: pressed ? colors.green : colors.yellow,
-                  marginRight: 40,
-                  justifyContent: "center",
                 },
               ]}
               onPress={handleClearData}
             >
-              <Text style={[styles.buttonText, { color: colors.black }]}>Reset</Text>
-            </Pressable>
-
-            {/* settings */}
-            <Pressable
-              style={styles.settingsButton}
-              onPress={() => setShowSettings(true)}
-            >
-              {({ pressed }) => (
-                <FontAwesome5
-                  name="cog"
-                  size={24}
-                  color={pressed ? colors.green : colors.yellow}
-                />
-              )}
+              <Text style={[styles.buttonText, { color: colors.black }]}>
+                Reset
+              </Text>
             </Pressable>
           </View>
+
+          {/* Settings Button */}
+          <Pressable
+            style={styles.topButton}
+            onPress={() => setShowSettings(true)}
+          >
+            {({ pressed }) => (
+              <FontAwesome5
+                name="cog"
+                size={24}
+                color={pressed ? colors.green : colors.yellow}
+              />
+            )}
+          </Pressable>
         </View>
 
         {/* receipt name text input */}
@@ -805,7 +812,8 @@ const Split = () => {
                 ]}
               >
                 {/** SAFE PRINT: if buyer.name isn't a string, show JSON */}
-                {safeString(buyer.name)}: ${buyerTotals[index]?.toFixed(2) || "0.00"}
+                {safeString(buyer.name)}: $
+                {buyerTotals[index]?.toFixed(2) || "0.00"}
               </Text>
             ))
           ) : (
@@ -902,7 +910,9 @@ const Split = () => {
               <View style={styles.cellInner}>
                 <TouchableOpacity
                   onPress={() =>
-                    setItems((prev) => prev.filter((_, idx) => idx !== itemIndex))
+                    setItems((prev) =>
+                      prev.filter((_, idx) => idx !== itemIndex)
+                    )
                   }
                   style={styles.trashIcon}
                 >
@@ -991,7 +1001,11 @@ const Split = () => {
                         <CheckBox
                           value={buyer.selected[qtyIndex]}
                           onValueChange={() =>
-                            toggleBuyerSelection(itemIndex, buyerIndex, qtyIndex)
+                            toggleBuyerSelection(
+                              itemIndex,
+                              buyerIndex,
+                              qtyIndex
+                            )
                           }
                         />
                         <Text
@@ -1075,11 +1089,18 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
     alignItems: "center",
     padding: 10,
+    height: 60,
+    paddingHorizontal: 15,
   },
   topButton: {
     paddingVertical: 5,
     paddingHorizontal: 10,
     borderRadius: 4,
+  },
+  centerButtonsContainer: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
   },
   clearDataButton: {
     borderWidth: 1,
