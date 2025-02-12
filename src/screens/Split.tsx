@@ -1,4 +1,5 @@
 // src/screens/Split.tsx
+
 import React, { useState, useRef, useEffect } from "react";
 import {
   View,
@@ -71,25 +72,27 @@ const checkboxStyles = StyleSheet.create({
   },
 });
 
-// define item type
+type BuyerObject = {
+  name: string | any;        // sometimes might be an object from old data
+  selected: boolean[];
+};
+
 type ItemType = {
-  item: string;
+  item: string | any;        // sometimes might be an object from old data
   price: number;
   quantity: number;
-  buyers: { name: string; selected: boolean[] }[];
+  buyers: BuyerObject[];
   tempQuantity?: string;
 };
 
-// define shape of a "Receipt"
 export type ReceiptData = {
   name: string;
   items: ItemType[];
-  buyers: { name: string; selected: boolean[] }[];
+  buyers: BuyerObject[];
   tax: number;
   time_and_date: string;
 };
 
-// define route params
 type ImportedReceiptParam = {
   importedReceipt?: ReceiptData;
 };
@@ -101,11 +104,9 @@ const Split = () => {
   const route = useRoute<SplitRouteProp>();
   const { importedReceipt } = route.params || {};
 
-  // single piece of state for receipt name
+  // basic states
   const [receiptName, setReceiptName] = useState("untitled receipt");
-  const [buyers, setBuyers] = useState<{ name: string; selected: boolean[] }[]>(
-    []
-  );
+  const [buyers, setBuyers] = useState<BuyerObject[]>([]);
   const [tax, setTax] = useState(0);
   const [taxInput, setTaxInput] = useState("");
   const [itemNameInput, setItemNameInput] = useState("");
@@ -134,10 +135,10 @@ const Split = () => {
   const [showSavedBanner, setShowSavedBanner] = useState(false);
   const [savedBannerOpacity] = useState(new Animated.Value(0));
 
-  // local storage key for caching
+  // local storage key
   const SPLIT_STORAGE_KEY = "@split_state";
 
-  // 2. save to cache whenever states change
+  // save to cache whenever states change
   useEffect(() => {
     const saveToCache = async () => {
       try {
@@ -158,12 +159,13 @@ const Split = () => {
     saveToCache();
   }, [receiptName, buyers, tax, items]);
 
+  // load data
   useEffect(() => {
     const loadData = async () => {
       try {
-        // first, see if there are route params
         if (route.params?.importedReceipt) {
           console.log("Using route.params.importedReceipt");
+          // fix items to have a safe quantity
           const safeItems = (route.params.importedReceipt.items ?? []).map(
             (it: ItemType) => {
               let safeQuantity = it.quantity;
@@ -185,7 +187,6 @@ const Split = () => {
           setItems(safeItems);
           setTax(route.params.importedReceipt.tax || 0);
         } else {
-          // no route params -> try local storage
           console.log("No route params, trying local storage");
           const storedData = await AsyncStorage.getItem(SPLIT_STORAGE_KEY);
           if (storedData) {
@@ -195,7 +196,6 @@ const Split = () => {
             setTax(parsed.tax ?? 0);
             setItems(parsed.items ?? []);
           } else {
-            // nothing in local storage
             setReceiptName("untitled receipt");
             setBuyers([]);
             setItems([]);
@@ -208,10 +208,9 @@ const Split = () => {
     };
 
     loadData();
-    // you can include [] as deps so it only runs once
   }, []);
 
-  //save to cache
+  // extra re-save to cache
   useEffect(() => {
     const saveToCache = async () => {
       try {
@@ -251,13 +250,11 @@ const Split = () => {
   const showReceiptSavedBanner = () => {
     setShowSavedBanner(true);
     savedBannerOpacity.setValue(0);
-    // fade in
     Animated.timing(savedBannerOpacity, {
       toValue: 1,
       duration: 300,
       useNativeDriver: true,
     }).start(() => {
-      // fade out after ~1.5s
       setTimeout(() => {
         Animated.timing(savedBannerOpacity, {
           toValue: 0,
@@ -273,7 +270,6 @@ const Split = () => {
   // handle save
   const handleSaveReceipt = async () => {
     if (!auth.currentUser) {
-      // user not signed in
       setShowSignInBanner(true);
       setSaveButtonColor("red");
       Animated.timing(bannerOpacity, {
@@ -284,7 +280,6 @@ const Split = () => {
       return;
     }
 
-    // user is signed in
     setSaveButtonColor(colors.green);
     setTimeout(() => setSaveButtonColor(colors.yellow), 100);
 
@@ -292,7 +287,6 @@ const Split = () => {
       const userId = auth.currentUser.uid;
       let finalReceiptName = receiptName.trim() || "untitled receipt";
 
-      // read all receipts to see if finalReceiptName already exists
       const userReceiptsRef = ref(database, `receipts/${userId}`);
       const snapshot = await get(userReceiptsRef);
 
@@ -329,7 +323,6 @@ const Split = () => {
   // handle import
   const handleImportReceipt = () => {
     if (!auth.currentUser) {
-      // user not signed in
       setShowSignInBanner(true);
       setImportButtonColor("red");
       Animated.timing(bannerOpacity, {
@@ -383,7 +376,7 @@ const Split = () => {
 
         if (isNaN(newQuantity) || newQuantity < 1) {
           const { tempQuantity, ...rest } = item;
-          return { ...rest, quantity: 1 }; // default to 1 if invalid
+          return { ...rest, quantity: 1 };
         }
         const updatedBuyers = item.buyers.map((buyer) => {
           const newSelected = buyer.selected.slice(0, newQuantity);
@@ -402,7 +395,7 @@ const Split = () => {
     );
   };
 
-  // checkbox toggling
+  // toggle buyer selection
   const toggleBuyerSelection = (
     itemIndex: number,
     buyerIndex: number,
@@ -422,7 +415,7 @@ const Split = () => {
     );
   };
 
-  // buyer input
+  // new buyer
   const [buyerNameInput, setBuyerNameInput] = useState("");
   const handleAddBuyer = () => {
     const name = buyerNameInput.trim();
@@ -452,7 +445,7 @@ const Split = () => {
     setTimeout(() => buyerRef.current?.focus(), 0);
   };
 
-  // each buyer owes
+  // cost per buyer
   const calculateBuyerOwes = () => {
     const buyerTotals = buyers.map(() => 0);
     let totalCostWithoutTax = 0;
@@ -474,8 +467,8 @@ const Split = () => {
 
     if (buyers.length === 0) return buyerTotals;
 
-    // no items but there's tax => split evenly
     if (items.length === 0 && tax > 0) {
+      // no items but there's tax => split evenly
       const taxPerBuyer = tax / buyers.length;
       return buyerTotals.map((total) => total + taxPerBuyer);
     } else if (splitTaxEvenly) {
@@ -514,11 +507,15 @@ const Split = () => {
     setTax(0);
   };
 
-  // navigation
+  // go home
   const goHome = () => {
-    // instead of navigation.navigate("Home")
     navigation.navigate("MainTabs", { screen: "Home" });
   };
+
+  // Safe string function to avoid crashing if old data is an object
+  function safeString(val: any) {
+    return typeof val === "string" ? val : JSON.stringify(val);
+  }
 
   return (
     <KeyboardAvoidingView
@@ -527,9 +524,7 @@ const Split = () => {
     >
       {/* sign-in banner */}
       {showSignInBanner && (
-        <Animated.View
-          style={[styles.signInBanner, { opacity: bannerOpacity }]}
-        >
+        <Animated.View style={[styles.signInBanner, { opacity: bannerOpacity }]}>
           <Text style={styles.signInBannerText}>
             {importButtonColor === "red"
               ? "Sign In To Import Receipts"
@@ -540,9 +535,7 @@ const Split = () => {
 
       {/* "Receipt Saved" banner */}
       {showSavedBanner && (
-        <Animated.View
-          style={[styles.savedBanner, { opacity: savedBannerOpacity }]}
-        >
+        <Animated.View style={[styles.savedBanner, { opacity: savedBannerOpacity }]}>
           <Text style={styles.savedBannerText}>Receipt Saved</Text>
         </Animated.View>
       )}
@@ -568,9 +561,7 @@ const Split = () => {
               style={({ pressed }) => [
                 styles.topButton,
                 {
-                  backgroundColor: pressed
-                    ? colors.lightGray
-                    : importButtonColor,
+                  backgroundColor: pressed ? colors.lightGray : importButtonColor,
                   borderWidth: 1,
                   borderColor: colors.black,
                   marginRight: 10,
@@ -580,9 +571,7 @@ const Split = () => {
               ]}
               onPress={handleImportReceipt}
             >
-              <Text style={[styles.buttonText, { color: colors.black }]}>
-                Import
-              </Text>
+              <Text style={[styles.buttonText, { color: colors.black }]}>Import</Text>
             </Pressable>
 
             {/* save */}
@@ -600,9 +589,7 @@ const Split = () => {
               ]}
               onPress={handleSaveReceipt}
             >
-              <Text style={[styles.buttonText, { color: colors.black }]}>
-                Save
-              </Text>
+              <Text style={[styles.buttonText, { color: colors.black }]}>Save</Text>
             </Pressable>
 
             {/* reset */}
@@ -618,9 +605,7 @@ const Split = () => {
               ]}
               onPress={handleClearData}
             >
-              <Text style={[styles.buttonText, { color: colors.black }]}>
-                Reset
-              </Text>
+              <Text style={[styles.buttonText, { color: colors.black }]}>Reset</Text>
             </Pressable>
 
             {/* settings */}
@@ -808,7 +793,7 @@ const Split = () => {
               { color: darkMode ? colors.white : colors.black },
             ]}
           >
-            <Text style={{ fontWeight: "bold" }}>Cost per Buyer: </Text>
+            Cost per Buyer:
           </Text>
           {buyers.length > 0 ? (
             buyers.map((buyer, index) => (
@@ -819,7 +804,8 @@ const Split = () => {
                   { color: darkMode ? colors.white : colors.black },
                 ]}
               >
-                {buyer.name}: ${buyerTotals[index]?.toFixed(2) || "0.00"}
+                {/** SAFE PRINT: if buyer.name isn't a string, show JSON */}
+                {safeString(buyer.name)}: ${buyerTotals[index]?.toFixed(2) || "0.00"}
               </Text>
             ))
           ) : (
@@ -841,8 +827,7 @@ const Split = () => {
             { color: darkMode ? colors.white : colors.black },
           ]}
         >
-          <Text style={{ fontWeight: "bold" }}>Tax Amount:</Text> $
-          {tax.toFixed(2)}
+          Tax Amount: ${tax.toFixed(2)}
         </Text>
         <Text
           style={[
@@ -850,8 +835,7 @@ const Split = () => {
             { color: darkMode ? colors.white : colors.black },
           ]}
         >
-          <Text style={{ fontWeight: "bold" }}>Total Cost:</Text> $
-          {calculateTotalCost().toFixed(2)}
+          Total Cost: ${calculateTotalCost().toFixed(2)}
         </Text>
 
         {/* grid titles */}
@@ -918,9 +902,7 @@ const Split = () => {
               <View style={styles.cellInner}>
                 <TouchableOpacity
                   onPress={() =>
-                    setItems((prev) =>
-                      prev.filter((_, idx) => idx !== itemIndex)
-                    )
+                    setItems((prev) => prev.filter((_, idx) => idx !== itemIndex))
                   }
                   style={styles.trashIcon}
                 >
@@ -932,7 +914,8 @@ const Split = () => {
                     { color: darkMode ? colors.offWhite2 : colors.black },
                   ]}
                 >
-                  {item.item}
+                  {/** SAFE PRINT: if item.item isn't a string, show JSON */}
+                  {safeString(item.item)}
                 </Text>
               </View>
             </View>
@@ -1008,11 +991,7 @@ const Split = () => {
                         <CheckBox
                           value={buyer.selected[qtyIndex]}
                           onValueChange={() =>
-                            toggleBuyerSelection(
-                              itemIndex,
-                              buyerIndex,
-                              qtyIndex
-                            )
+                            toggleBuyerSelection(itemIndex, buyerIndex, qtyIndex)
                           }
                         />
                         <Text
@@ -1023,7 +1002,7 @@ const Split = () => {
                             },
                           ]}
                         >
-                          {buyer.name}
+                          {safeString(buyer.name)}
                         </Text>
                       </View>
                     ))}
@@ -1081,6 +1060,7 @@ const Split = () => {
 
 export default Split;
 
+/** STYLES */
 const styles = StyleSheet.create({
   container: {
     flex: 1,
@@ -1112,14 +1092,11 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: "bold",
   },
-
-  // name container
   receiptNameContainer: {
     backgroundColor: colors.lightGray2,
     padding: 25,
     marginBottom: 10,
   },
-
   inputField: {
     borderWidth: 1,
     borderColor: colors.gray1,
@@ -1202,6 +1179,8 @@ const styles = StyleSheet.create({
   },
   sectionTitle: {
     fontSize: 18,
+    marginBottom: 5,
+    fontWeight: "bold",
   },
   buyerCostText: {
     fontSize: 16,
@@ -1327,8 +1306,6 @@ const styles = StyleSheet.create({
     alignItems: "center",
     marginTop: 15,
   },
-
-  // sign in banner
   signInBanner: {
     position: "absolute",
     width: "100%",
@@ -1342,8 +1319,6 @@ const styles = StyleSheet.create({
     fontWeight: "600",
     textAlign: "center",
   },
-
-  // receipt saved banner
   savedBanner: {
     position: "absolute",
     width: "100%",
@@ -1359,7 +1334,7 @@ const styles = StyleSheet.create({
   },
 });
 
-// dark mode overrides
+// dark mode
 const darkStyles = StyleSheet.create({
   container: {
     backgroundColor: "#1d1d1d",
