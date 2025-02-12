@@ -1,11 +1,12 @@
-// ImportReceipts.tsx
 import React, { useEffect, useState } from "react";
-import { ScrollView, Text, StyleSheet, Pressable } from "react-native";
+import { ScrollView, Text, StyleSheet, Pressable, View } from "react-native";
 import { useNavigation } from "@react-navigation/native";
 import { auth, database } from "../firebase";
 import { ref, onValue } from "firebase/database";
+import Icon from "react-native-vector-icons/FontAwesome";
+import colors from "../../constants/colors";
 
-// The same types your Split screen expects
+// types for buyer, item, and receipt
 export type BuyerType = {
   name: string;
   selected: boolean[];
@@ -26,34 +27,27 @@ export type ReceiptData = {
   time_and_date: string;
 };
 
-// A helper to force a weird/old data "buyer" into the { name: string, selected: boolean[] } shape.
+// helper to normalize a buyer
 function normalizeBuyer(rawBuyer: any): BuyerType {
-  // handle the case rawBuyer is a string (old format had just names in an array)
   if (typeof rawBuyer === "string") {
     return { name: rawBuyer, selected: [] };
   }
-
-  // if it's already an object, read `.name` and `.selected`
   if (rawBuyer && typeof rawBuyer === "object") {
     let realName = "";
     if (typeof rawBuyer.name === "string") {
       realName = rawBuyer.name;
     } else {
-      // fallback: if .name is not a string, just string-ify it
       realName = JSON.stringify(rawBuyer.name ?? "???");
     }
     const sel = Array.isArray(rawBuyer.selected)
       ? rawBuyer.selected.filter((val: any) => typeof val === "boolean")
       : [];
-
     return { name: realName, selected: sel };
   }
-
-  // fallback if rawBuyer is null, undefined, or weird
   return { name: "UnknownBuyer", selected: [] };
 }
 
-// Force an item into the shape your Split screen expects
+// helper to normalize an item
 function normalizeItem(rawItem: any): ItemType {
   let iName = "";
   if (typeof rawItem.item === "string") {
@@ -63,33 +57,25 @@ function normalizeItem(rawItem: any): ItemType {
   } else {
     iName = "Unnamed";
   }
-
   const priceNum =
     typeof rawItem.price === "number" && !isNaN(rawItem.price)
       ? rawItem.price
       : 0;
-
   const qty =
     typeof rawItem.quantity === "number" && rawItem.quantity > 0
       ? rawItem.quantity
       : 1;
-
-  // if the old format had "selectedBy" = ["Alice","Bob"], transform it
-  // if the new format has "buyers" = [ { name, selected } ], normalize them
   let itemBuyers: BuyerType[] = [];
   if (Array.isArray(rawItem.buyers)) {
     itemBuyers = rawItem.buyers.map(normalizeBuyer);
   } else if (Array.isArray(rawItem.selectedBy)) {
-    // old approach: item.selectedBy = ['Alice', 'Bob']
     itemBuyers = rawItem.selectedBy.map((nameStr: string) => ({
       name: nameStr,
       selected: Array(qty).fill(true),
     }));
   } else {
-    // fallback: no buyer info
     itemBuyers = [];
   }
-
   return {
     item: iName,
     price: priceNum,
@@ -98,31 +84,22 @@ function normalizeItem(rawItem: any): ItemType {
   };
 }
 
-// Force the entire receipt object into shape
+// helper to normalize a receipt object
 function normalizeReceiptData(receiptKey: string, rawData: any): ReceiptData {
-  // time
   const t =
     typeof rawData.time_and_date === "string" ? rawData.time_and_date : "";
-
-  // top-level buyers
   let topBuyers: BuyerType[] = [];
   if (Array.isArray(rawData.buyers)) {
     topBuyers = rawData.buyers.map(normalizeBuyer);
   } else {
-    // fallback: no explicit top-level buyers
     topBuyers = [];
   }
-
-  // items
   const rawItems = Array.isArray(rawData.items) ? rawData.items : [];
   const items: ItemType[] = rawItems.map(normalizeItem);
-
-  // tax
   let theTax = 0;
   if (typeof rawData.tax === "number" && !isNaN(rawData.tax)) {
     theTax = rawData.tax;
   }
-
   return {
     name: receiptKey,
     items,
@@ -135,6 +112,7 @@ function normalizeReceiptData(receiptKey: string, rawData: any): ReceiptData {
 export default function ImportReceipts() {
   const navigation = useNavigation<any>();
   const [receipts, setReceipts] = useState<ReceiptData[]>([]);
+  const [backIconColor, setBackIconColor] = useState(colors.yellow);
 
   useEffect(() => {
     if (!auth.currentUser) return;
@@ -147,19 +125,14 @@ export default function ImportReceipts() {
         return;
       }
       const data = snapshot.val() || {};
-
-      // Convert each raw receipt into the shape your Split screen expects
       const loaded = Object.keys(data).map((key) =>
         normalizeReceiptData(key, data[key])
       );
-
-      // Sort by date descending (newest first)
       loaded.sort(
         (a, b) =>
           new Date(b.time_and_date).getTime() -
           new Date(a.time_and_date).getTime()
       );
-
       setReceipts(loaded);
     });
 
@@ -167,70 +140,132 @@ export default function ImportReceipts() {
   }, []);
 
   function handleSelectReceipt(receipt: ReceiptData) {
-    // now we pass a fully normalized receipt to Split
     navigation.navigate("MainTabs", {
       screen: "Split",
       params: { importedReceipt: receipt },
     });
   }
 
+  // use goBack so that we return to the previous screen
+  function handleBack() {
+    navigation.goBack();
+  }
+
+  // calculate total cost for a receipt
+  function calculateTotal(receipt: ReceiptData) {
+    return (
+      receipt.items.reduce(
+        (sum, item) => sum + item.price * item.quantity,
+        0
+      ) + (receipt.tax || 0)
+    );
+  }
+
   return (
-    <ScrollView style={styles.container}>
-      <Text style={styles.header}>Import Receipts</Text>
-      {receipts.map((receipt) => (
+    <View style={styles.mainContainer}>
+      <View style={styles.topBar}>
         <Pressable
-          key={receipt.name}
-          onPress={() => handleSelectReceipt(receipt)}
-          style={({ pressed }) => [
-            styles.card,
-            { backgroundColor: pressed ? "#ffe600" : "#ffff99" },
-          ]}
+          onPress={handleBack}
+          style={styles.backButton}
+          onPressIn={() => setBackIconColor(colors.green)}
+          onPressOut={() => setBackIconColor(colors.yellow)}
         >
-          <Text style={styles.cardText}>{receipt.name}</Text>
-          <Text style={styles.cardSubText}>
-            {receipt.time_and_date
-              ? new Date(receipt.time_and_date).toLocaleString()
-              : ""}
-          </Text>
+          <Icon name="arrow-left" size={24} color={backIconColor} />
         </Pressable>
-      ))}
-      {receipts.length === 0 && (
-        <Text style={styles.emptyText}>No receipts found.</Text>
-      )}
-    </ScrollView>
+        <Text style={styles.header}>Import Receipts</Text>
+        {/* spacer to balance the top bar */}
+        <View style={styles.headerSpacer} />
+      </View>
+      <ScrollView contentContainerStyle={styles.contentContainer}>
+        {receipts.map((receipt) => {
+          const totalCost = calculateTotal(receipt);
+          return (
+            <Pressable
+              key={receipt.name}
+              onPress={() => handleSelectReceipt(receipt)}
+              style={({ pressed }) => [
+                styles.card,
+                { backgroundColor: pressed ? colors.graygreen : "#333" },
+              ]}
+            >
+              <Text style={styles.cardText}>{receipt.name}</Text>
+              <Text style={styles.cardSubText}>
+                {receipt.time_and_date
+                  ? new Date(receipt.time_and_date).toLocaleString()
+                  : ""}
+              </Text>
+              <Text style={styles.cardTotal}>
+                Total: ${totalCost.toFixed(2)}
+              </Text>
+            </Pressable>
+          );
+        })}
+        {receipts.length === 0 && (
+          <Text style={styles.emptyText}>No receipts found.</Text>
+        )}
+      </ScrollView>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
+  mainContainer: {
     flex: 1,
-    backgroundColor: "yellow",
-    padding: 20,
+    backgroundColor: colors.yuck,
+  },
+  topBar: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingHorizontal: 15,
+    paddingVertical: 10,
+    backgroundColor: colors.yuck,
+  },
+  backButton: {
+    padding: 10,
   },
   header: {
+    flex: 1,
     fontSize: 20,
     fontWeight: "bold",
-    marginBottom: 15,
+    color: "#fff",
+    textAlign: "center",
+  },
+  headerSpacer: {
+    width: 40,
+  },
+  contentContainer: {
+    alignItems: "center",
+    paddingHorizontal: 20,
+    paddingBottom: 20,
+    marginTop: 20, // extra margin between top bar and receipts
   },
   card: {
-    padding: 15,
-    marginVertical: 5,
-    borderWidth: 1,
-    borderColor: "#000",
-    borderRadius: 5,
+    padding: 12,
+    marginBottom: 15,
+    backgroundColor: "#333",
+    borderRadius: 6,
+    width: "90%",
   },
   cardText: {
-    fontSize: 16,
-    fontWeight: "500",
-    color: "#000",
+    fontSize: 18,
+    fontWeight: "600",
+    color: "#fff",
+    marginBottom: 5,
   },
   cardSubText: {
     fontSize: 12,
-    color: "#555",
+    color: "#ccc",
+    marginBottom: 5,
+  },
+  cardTotal: {
+    fontSize: 16,
+    color: "#fff",
+    marginBottom: 10,
   },
   emptyText: {
     marginTop: 20,
     fontSize: 14,
-    color: "#333",
+    color: "#fff",
   },
 });

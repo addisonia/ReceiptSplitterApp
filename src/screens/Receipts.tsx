@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useRef } from "react";
 import {
   View,
   Text,
@@ -7,14 +7,14 @@ import {
   ScrollView,
   Dimensions,
   ActivityIndicator,
+  Animated,
 } from "react-native";
-// firebase imports
-import { getDatabase, ref, get } from "firebase/database";
-import { auth } from "../firebase"; // import your configured auth
+import { getDatabase, ref, get, remove } from "firebase/database";
+import { auth } from "../firebase";
 import Icon from "react-native-vector-icons/FontAwesome";
 import { useNavigation } from "@react-navigation/native";
 import { StackNavigationProp } from "@react-navigation/stack";
-import { RootStackParamList } from "../types/RootStackParams"; // or wherever your types are
+import { RootStackParamList } from "../types/RootStackParams";
 import colors from "../../constants/colors";
 
 type ReceiptsScreenProp = StackNavigationProp<RootStackParamList, "Receipts">;
@@ -22,10 +22,17 @@ type ReceiptsScreenProp = StackNavigationProp<RootStackParamList, "Receipts">;
 const Receipts = () => {
   const navigation = useNavigation<ReceiptsScreenProp>();
 
-  // store the receipts in local state
+  // state for receipts, loading indicator, and button colors
   const [receipts, setReceipts] = useState<Record<string, any> | null>(null);
   const [loading, setLoading] = useState(true);
   const [homeIconColor, setHomeIconColor] = useState(colors.yellow);
+
+  // state for edit mode and its icon color
+  const [editMode, setEditMode] = useState(false);
+  const [editIconColor, setEditIconColor] = useState(colors.yellow);
+
+  // state to track global expansion of all cards
+  const [globalExpanded, setGlobalExpanded] = useState(false);
 
   const user = auth.currentUser;
 
@@ -48,7 +55,7 @@ const Receipts = () => {
           setReceipts(null);
         }
       } catch (error) {
-        console.error("Error fetching receipts:", error);
+        console.error("error fetching receipts:", error);
       } finally {
         if (isMounted) setLoading(false);
       }
@@ -63,19 +70,86 @@ const Receipts = () => {
   // navigate home
   const goHome = () => {
     setHomeIconColor(colors.green);
-    navigation.navigate("MainTabs"); // or "MainTabs", whichever you prefer
+    navigation.navigate("MainTabs");
   };
 
-  // helper to render each receipt
+  // toggle edit mode
+  const toggleEditMode = () => {
+    setEditMode((prev) => !prev);
+  };
+
+  // toggle global expansion for all receipt cards
+  const toggleGlobalExpand = () => {
+    setGlobalExpanded((prev) => !prev);
+  };
+
+  // delete a receipt from the database and update local state
+  const deleteReceipt = async (receiptName: string) => {
+    if (!user) return;
+    try {
+      const db = getDatabase();
+      await remove(ref(db, `receipts/${user.uid}/${receiptName}`));
+      setReceipts((prev) => {
+        if (!prev) return prev;
+        const updated = { ...prev };
+        delete updated[receiptName];
+        return updated;
+      });
+    } catch (error) {
+      console.error("error deleting receipt:", error);
+    }
+  };
+
+  // component for a trash icon that shakes
+  const ShakingTrash = ({ onPress }: { onPress: () => void }) => {
+    const shakeAnim = useRef(new Animated.Value(0)).current;
+
+    useEffect(() => {
+      Animated.loop(
+        Animated.sequence([
+          Animated.timing(shakeAnim, {
+            toValue: 1,
+            duration: 100,
+            useNativeDriver: true,
+          }),
+          Animated.timing(shakeAnim, {
+            toValue: -1,
+            duration: 100,
+            useNativeDriver: true,
+          }),
+          Animated.timing(shakeAnim, {
+            toValue: 0,
+            duration: 100,
+            useNativeDriver: true,
+          }),
+        ])
+      ).start();
+    }, [shakeAnim]);
+
+    const rotation = shakeAnim.interpolate({
+      inputRange: [-1, 1],
+      outputRange: ["-10deg", "10deg"],
+    });
+
+    return (
+      <TouchableOpacity onPress={onPress} style={styles.trashButton}>
+        <Animated.View style={{ transform: [{ rotate: rotation }] }}>
+          <Icon name="trash" size={20} color="red" />
+        </Animated.View>
+      </TouchableOpacity>
+    );
+  };
+
+  // render receipts sorted by date
   const renderReceipts = () => {
     if (!receipts) {
-      return <Text style={styles.noReceiptsText}>No receipts found.</Text>;
+      return <Text style={styles.noReceiptsText}>no receipts found.</Text>;
     }
-    // convert object to an array of [receiptName, data], then sort by date
+    // sort the receipts by date (newest first)
     const sortedEntries = Object.entries(receipts).sort((a, b) => {
       const dateA = new Date(a[1].time_and_date);
       const dateB = new Date(b[1].time_and_date);
-      return dateB.getTime() - dateA.getTime(); // descending
+      return dateB.getTime() - dateA.getTime();
     });
 
     return sortedEntries.map(([receiptName, receiptData]) => {
@@ -92,19 +166,49 @@ const Receipts = () => {
 
       return (
         <View key={receiptName} style={styles.receiptCard}>
-          <Text style={styles.receiptTitle}>{receiptName}</Text>
-          <Text style={styles.receiptDate}>Date: {dateString}</Text>
-          <Text style={styles.receiptCost}>Total: ${totalCost.toFixed(2)}</Text>
-
-          {receiptData.items && receiptData.items.length > 0 ? (
-            receiptData.items.map((item: any, idx: number) => (
-              <Text key={idx} style={styles.itemText}>
-                {item.item} (x{item.quantity}) - ${item.price.toFixed(2)} each
-              </Text>
-            ))
-          ) : (
-            <Text style={styles.noItemsText}>No items in this receipt</Text>
+          {/* show trash icon in edit mode */}
+          {editMode && (
+            <ShakingTrash onPress={() => deleteReceipt(receiptName)} />
           )}
+          <Text style={styles.receiptTitle}>{receiptName}</Text>
+          <Text style={styles.receiptDate}>date: {dateString}</Text>
+          <Text style={styles.receiptCost}>total: ${totalCost.toFixed(2)}</Text>
+          {globalExpanded &&
+            receiptData.items &&
+            receiptData.items.length > 0 &&
+            receiptData.items.map((item: any, idx: number) => {
+              // filter buyers that are selected (assumes buyer.selected is an array or boolean)
+              const selectedBuyers = item.buyers
+                ? item.buyers.filter((b: any) =>
+                    Array.isArray(b.selected)
+                      ? b.selected.includes(true)
+                      : b.selected
+                  )
+                : [];
+              return (
+                <View key={idx} style={styles.itemContainer}>
+                  <Text style={styles.itemText}>
+                    {item.item} (x{item.quantity}) - ${item.price.toFixed(2)}
+                  </Text>
+                  {selectedBuyers.length > 0 && (
+                    <Text style={styles.buyersText}>
+                      buyers: {selectedBuyers.map((b: any) => b.name).join(", ")}
+                    </Text>
+                  )}
+                </View>
+              );
+            })}
+          {/* chevron to toggle global expansion for all cards */}
+          <TouchableOpacity
+            style={styles.expandButton}
+            onPress={toggleGlobalExpand}
+          >
+            <Icon
+              name={globalExpanded ? "chevron-up" : "chevron-down"}
+              size={20}
+              color="#fff"
+            />
+          </TouchableOpacity>
         </View>
       );
     });
@@ -112,7 +216,7 @@ const Receipts = () => {
 
   return (
     <View style={styles.container}>
-      {/* top row with home button */}
+      {/* top row with home and edit buttons */}
       <View style={styles.topRow}>
         <TouchableOpacity
           style={styles.homeButton}
@@ -125,8 +229,14 @@ const Receipts = () => {
 
         <Text style={styles.screenTitle}>Receipts</Text>
 
-        {/* Invisible spacer so "Receipts" text remains centered */}
-        <View style={{ width: 40 }} />
+        <TouchableOpacity
+          style={styles.editButton}
+          onPress={toggleEditMode}
+          onPressIn={() => setEditIconColor(colors.green)}
+          onPressOut={() => setEditIconColor(colors.yellow)}
+        >
+          <Icon name="trash" size={30} color={editIconColor} />
+        </TouchableOpacity>
       </View>
 
       <View style={styles.contentArea}>
@@ -142,7 +252,6 @@ const Receipts = () => {
 
 export default Receipts;
 
-// write comments in lowercase
 const { width: screenWidth } = Dimensions.get("window");
 const styles = StyleSheet.create({
   container: {
@@ -160,19 +269,19 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
     top: -10,
   },
-
   homeButton: {
-    padding: 10, // increases tap area
+    padding: 10,
   },
-
+  editButton: {
+    padding: 10,
+  },
   screenTitle: {
     fontSize: 24,
     fontWeight: "700",
     color: "#fff",
     textAlign: "center",
-    flex: 1, // makes it take up available space while centering
+    flex: 1,
   },
-
   contentArea: {
     flex: 1,
     width: "90%",
@@ -191,6 +300,7 @@ const styles = StyleSheet.create({
     marginBottom: 15,
     padding: 12,
     borderRadius: 6,
+    position: "relative",
   },
   receiptTitle: {
     fontSize: 18,
@@ -206,11 +316,31 @@ const styles = StyleSheet.create({
     color: "#fff",
     marginBottom: 10,
   },
+  itemContainer: {
+    marginBottom: 5,
+  },
   itemText: {
     color: "#fff",
+  },
+  buyersText: {
+    color: "#aaa",
+    fontSize: 14,
+    marginLeft: 10,
   },
   noItemsText: {
     color: "#fff",
     fontStyle: "italic",
+  },
+  expandButton: {
+    position: "absolute",
+    bottom: 5,
+    right: 5,
+    padding: 5,
+  },
+  trashButton: {
+    position: "absolute",
+    top: 5,
+    right: 12, // moved trash icon more to the left
+    zIndex: 1,
   },
 });
