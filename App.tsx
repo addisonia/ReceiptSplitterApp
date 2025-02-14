@@ -1,3 +1,4 @@
+// app.tsx
 import React, { useEffect, useState } from "react";
 import { registerRootComponent } from "expo";
 import { NavigationContainer } from "@react-navigation/native";
@@ -12,6 +13,7 @@ import Receipts from "./src/screens/Receipts";
 import ImportReceipts from "./src/screens/ImportReceipts";
 import { onAuthStateChanged, User } from "firebase/auth";
 import { auth } from "./src/firebase";
+import Chat from "./src/screens/Chat";
 
 const Tab = createMaterialTopTabNavigator();
 const Stack = createNativeStackNavigator();
@@ -22,9 +24,10 @@ const MainTabs = () => {
     <Tab.Navigator
       screenOptions={{
         swipeEnabled: true,
-        tabBarStyle: { display: "none" }, // hide the tab bar
+        tabBarStyle: { display: "none" },
       }}
     >
+      <Tab.Screen name="Chat" component={Chat} />
       <Tab.Screen name="Home" component={Home} />
       <Tab.Screen name="Split" component={Split} />
     </Tab.Navigator>
@@ -34,6 +37,10 @@ const MainTabs = () => {
 export type RootStackParamList = {
   Home: undefined;
   Snake: undefined;
+  Receipts: undefined;
+  ImportReceipts: undefined;
+  MainTabs: { screen: "Home" | "Split" | "Chat" } | undefined; // Modified type definition for MainTabs
+  Chat: undefined;
 };
 
 const colors = {

@@ -70,7 +70,7 @@ const Receipts = () => {
   // navigate home
   const goHome = () => {
     setHomeIconColor(colors.green);
-    navigation.navigate("MainTabs");
+    navigation.navigate("MainTabs", { screen: "Home" }); // Navigate to 'Home' tab
   };
 
   // toggle edit mode

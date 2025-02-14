@@ -1,4 +1,5 @@
-import type { ReceiptData } from "../screens/Split"; // or correct path
+// RootStackParams.tsx
+import type { ReceiptData } from "../screens/Split"; 
 
 
 export type RootStackParamList = {
@@ -11,4 +12,5 @@ export type RootStackParamList = {
   Receipts: undefined;
   ImportReceipts: undefined;
   Settings: { itemId: number; otherParams: string };
+  Chat: undefined;
 };

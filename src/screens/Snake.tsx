@@ -430,7 +430,7 @@ const Snake: React.FC = () => {
     /* function to navigate to main tabs screen */
     setHomeIconColor("#08f800");
     /* set home icon color to green on press in */
-    navigation.navigate("MainTabs");
+    navigation.navigate("MainTabs", { screen: "Home" }); // Navigate to 'Home' tab
     /* navigate to maintabs screen using navigation object */
   };
 
