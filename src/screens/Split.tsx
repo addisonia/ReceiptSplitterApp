@@ -8,14 +8,14 @@ import {
   ScrollView,
   TextInput,
   TouchableOpacity,
-  TouchableWithoutFeedback,
-  Modal,
-  Switch,
+  Pressable,
+  Animated,
+  SafeAreaView,
+  StatusBar,
+  ActivityIndicator,
   Alert,
   KeyboardAvoidingView,
   Platform,
-  Pressable,
-  Animated,
 } from "react-native";
 import { FontAwesome5 } from "@expo/vector-icons";
 import { useNavigation, useRoute, RouteProp } from "@react-navigation/native";
@@ -24,61 +24,22 @@ import { ref, get, set } from "firebase/database";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { RootStackParamList } from "../types/RootStackParams";
 
-const colors = {
-  white: "#ffffff",
-  offWhite: "#ede7d8",
-  offWhite2: "rgba(255, 255, 255, 0.78)",
-  lightGray: "#f0f0f0",
-  lightGray2: "#dfdfdf",
-  yellow: "#e3d400",
-  green: "#08f800",
-  yuck: "#5c540b",
-  yuckLight: "#9e9b7b",
-  blood: "rgb(182,57,11)",
-  orange: "#de910d",
-  gray1: "#a4a4a4",
-  black: "#000000",
-};
-
-// define prop types for our checkbox
-type CheckBoxProps = {
-  value: boolean;
-  onValueChange: () => void;
-};
-
-const CheckBox: React.FC<CheckBoxProps> = ({ value, onValueChange }) => {
-  return (
-    <TouchableOpacity
-      onPress={onValueChange}
-      style={[
-        checkboxStyles.box,
-        { backgroundColor: value ? colors.green : colors.white },
-      ]}
-    >
-      {value && <FontAwesome5 name="check" size={12} color={colors.white} />}
-    </TouchableOpacity>
-  );
-};
-
-const checkboxStyles = StyleSheet.create({
-  box: {
-    width: 20,
-    height: 20,
-    borderWidth: 1,
-    borderColor: colors.gray1,
-    alignItems: "center",
-    justifyContent: "center",
-    marginRight: 5,
-  },
-});
+import {
+  colors,
+  offWhiteTheme,
+  yuckTheme,
+  darkTheme,
+  getRandomHexColor,
+} from "../components/ColorThemes";
+import SettingsButton from "../components/SettingsButton";
 
 type BuyerObject = {
-  name: string | any; // sometimes might be an object from old data
+  name: string;
   selected: boolean[];
 };
 
 type ItemType = {
-  item: string | any; // sometimes might be an object from old data
+  item: string;
   price: number;
   quantity: number;
   buyers: BuyerObject[];
@@ -99,140 +60,267 @@ type ImportedReceiptParam = {
 
 type SplitRouteProp = RouteProp<RootStackParamList, "Split">;
 
-const Split = () => {
+type SplitState = {
+  receiptName: string;
+  buyers: BuyerObject[];
+  tax: number;
+  items: ItemType[];
+  settings: {
+    darkMode: boolean;
+    offWhiteMode: boolean;
+    yuckMode: boolean;
+    randomMode: boolean;
+    splitTaxEvenly: boolean;
+  };
+};
+
+// ----------------------------
+// Checkbox Component
+// ----------------------------
+type CheckBoxProps = {
+  value: boolean;
+  onValueChange: () => void;
+  theme: typeof colors;
+};
+
+const CheckBox: React.FC<CheckBoxProps> = ({ value, onValueChange, theme }) => {
+  const isYuckTheme = theme.extraYuckLight === "#d7d4b5";
+  const isDarkTheme = theme.offWhite2 === "#121212";
+
+  let backgroundColor = theme.white;
+  if (value) {
+    backgroundColor = theme.green;
+  } else {
+    if (isYuckTheme) {
+      backgroundColor = theme.extraYuckLight;
+    } else if (isDarkTheme) {
+      backgroundColor = theme.textDefault;
+    } else {
+      backgroundColor = theme.white;
+    }
+  }
+  const checkColor = isYuckTheme && value ? theme.extraYuckLight : theme.white;
+
+  return (
+    <TouchableOpacity
+      onPress={onValueChange}
+      style={[checkboxStyles.box, { backgroundColor }]}
+    >
+      {value && <FontAwesome5 name="check" size={12} color={checkColor} />}
+    </TouchableOpacity>
+  );
+};
+
+const checkboxStyles = StyleSheet.create({
+  box: {
+    width: 20,
+    height: 20,
+    borderWidth: 1,
+    borderColor: colors.gray1,
+    alignItems: "center",
+    justifyContent: "center",
+    marginRight: 5,
+  },
+});
+
+const Split: React.FC = () => {
   const navigation = useNavigation<any>();
   const route = useRoute<SplitRouteProp>();
   const { importedReceipt } = route.params || {};
 
-  // basic states
-  const [receiptName, setReceiptName] = useState("untitled receipt");
+  const [receiptName, setReceiptName] = useState<string>("untitled receipt");
   const [buyers, setBuyers] = useState<BuyerObject[]>([]);
-  const [tax, setTax] = useState(0);
-  const [taxInput, setTaxInput] = useState("");
-  const [itemNameInput, setItemNameInput] = useState("");
-  const [itemPriceInput, setItemPriceInput] = useState("");
+  const [tax, setTax] = useState<number>(0);
+  const [taxInput, setTaxInput] = useState<string>("");
+  const [itemNameInput, setItemNameInput] = useState<string>("");
+  const [itemPriceInput, setItemPriceInput] = useState<string>("");
   const [items, setItems] = useState<ItemType[]>([]);
-  const [showSettings, setShowSettings] = useState(false);
-  const [darkMode, setDarkMode] = useState(false);
-  const [splitTaxEvenly, setSplitTaxEvenly] = useState(true);
-  const [isEditingReceiptName, setIsEditingReceiptName] = useState(false);
 
-  // references
-  const buyerRef = useRef<TextInput | null>(null);
-  const itemNameRef = useRef<TextInput | null>(null);
-  const priceRef = useRef<TextInput | null>(null);
+  const [darkMode, setDarkMode] = useState<boolean>(false);
+  const [offWhiteMode, setOffWhiteMode] = useState<boolean>(false);
+  const [yuckMode, setYuckMode] = useState<boolean>(false);
+  const [randomMode, setRandomMode] = useState<boolean>(false);
+  const [splitTaxEvenly, setSplitTaxEvenly] = useState<boolean>(true);
 
-  // sign in banner
-  const [showSignInBanner, setShowSignInBanner] = useState(false);
-  const [bannerOpacity] = useState(new Animated.Value(0));
+  const [isEditingReceiptName, setIsEditingReceiptName] =
+    useState<boolean>(false);
+  const [showSignInBanner, setShowSignInBanner] = useState<boolean>(false);
+  const [bannerOpacity] = useState<Animated.Value>(new Animated.Value(0));
+  const [saveButtonColor, setSaveButtonColor] = useState<string>(colors.yellow);
+  const [importButtonColor, setImportButtonColor] = useState<string>(
+    colors.yellow
+  );
+  const [showSavedBanner, setShowSavedBanner] = useState<boolean>(false);
+  const [savedBannerOpacity] = useState<Animated.Value>(new Animated.Value(0));
 
-  // save button color
-  const [saveButtonColor, setSaveButtonColor] = useState(colors.yellow);
+  // random mode theme
+  const [randomTheme, setRandomTheme] = useState<typeof colors>(colors);
 
-  // import button color
-  const [importButtonColor, setImportButtonColor] = useState(colors.yellow);
+  const [isInitialized, setIsInitialized] = useState<boolean>(false);
 
-  // success banner for "Receipt Saved"
-  const [showSavedBanner, setShowSavedBanner] = useState(false);
-  const [savedBannerOpacity] = useState(new Animated.Value(0));
+  const SPLIT_STORAGE_KEY: string = "@split_state";
+  const importedReceiptUsed = useRef<boolean>(false);
 
-  // local storage key
-  const SPLIT_STORAGE_KEY = "@split_state";
-
-  // save to cache whenever states change
+  // ----------------------------
+  // Process Imported Receipt
+  // (we do NOT override color toggles here so the user’s color theme remains)
+  // ----------------------------
   useEffect(() => {
-    const saveToCache = async () => {
-      try {
-        const dataToStore = {
-          receiptName,
-          buyers,
-          tax,
-          items,
-        };
-        await AsyncStorage.setItem(
-          SPLIT_STORAGE_KEY,
-          JSON.stringify(dataToStore)
-        );
-      } catch (error) {
-        console.log("failed to save to cache:", error);
-      }
-    };
-    saveToCache();
-  }, [receiptName, buyers, tax, items]);
+    if (importedReceipt) {
+      const safeItems = (importedReceipt.items ?? []).map((it: ItemType) => {
+        let safeQuantity = it.quantity;
+        if (
+          typeof safeQuantity !== "number" ||
+          isNaN(safeQuantity) ||
+          safeQuantity < 1
+        ) {
+          safeQuantity = 1;
+        }
+        return { ...it, quantity: safeQuantity };
+      });
+      setReceiptName(importedReceipt.name || "untitled receipt");
+      setBuyers(importedReceipt.buyers || []);
+      setItems(safeItems);
+      setTax(importedReceipt.tax || 0);
+      importedReceiptUsed.current = true;
+      setIsInitialized(true);
+      navigation.setParams({ importedReceipt: undefined });
+    }
+  }, [importedReceipt, navigation]);
 
-  // load data
+  // ----------------------------
+  // Load from Storage
+  // ----------------------------
   useEffect(() => {
-    const loadData = async () => {
+    const loadCachedData = async () => {
+      if (importedReceiptUsed.current) return;
       try {
-        if (route.params?.importedReceipt) {
-          console.log("using route.params.importedReceipt");
-          // fix items to have a safe quantity
-          const safeItems = (route.params.importedReceipt.items ?? []).map(
-            (it: ItemType) => {
-              let safeQuantity = it.quantity;
-              if (
-                typeof safeQuantity !== "number" ||
-                isNaN(safeQuantity) ||
-                safeQuantity < 1
-              ) {
-                safeQuantity = 1;
-              }
-              return { ...it, quantity: safeQuantity };
-            }
-          );
-
-          setReceiptName(
-            route.params.importedReceipt.name || "untitled receipt"
-          );
-          setBuyers(route.params.importedReceipt.buyers || []);
-          setItems(safeItems);
-          setTax(route.params.importedReceipt.tax || 0);
-        } else {
-          console.log("no route params, trying local storage");
-          const storedData = await AsyncStorage.getItem(SPLIT_STORAGE_KEY);
-          if (storedData) {
-            const parsed = JSON.parse(storedData);
-            setReceiptName(parsed.receiptName ?? "untitled receipt");
-            setBuyers(parsed.buyers ?? []);
-            setTax(parsed.tax ?? 0);
-            setItems(parsed.items ?? []);
-          } else {
-            setReceiptName("untitled receipt");
-            setBuyers([]);
-            setItems([]);
-            setTax(0);
+        const storedData = await AsyncStorage.getItem(SPLIT_STORAGE_KEY);
+        if (storedData) {
+          const parsed: SplitState = JSON.parse(storedData);
+          setReceiptName(parsed.receiptName ?? "untitled receipt");
+          setBuyers(parsed.buyers ?? []);
+          setTax(parsed.tax ?? 0);
+          setItems(parsed.items ?? []);
+          // crucially, we restore color toggles from cache
+          if (parsed.settings) {
+            setDarkMode(parsed.settings.darkMode ?? false);
+            setOffWhiteMode(parsed.settings.offWhiteMode ?? false);
+            setYuckMode(parsed.settings.yuckMode ?? false);
+            setRandomMode(parsed.settings.randomMode ?? false);
+            setSplitTaxEvenly(parsed.settings.splitTaxEvenly ?? true);
           }
         }
       } catch (error) {
-        console.log("failed to load data:", error);
+        console.log("failed to load cached data:", error);
+      } finally {
+        setIsInitialized(true);
       }
     };
-
-    loadData();
+    loadCachedData();
   }, []);
 
-  // extra re-save to cache
+  // ----------------------------
+  // Save on blur
+  // ----------------------------
   useEffect(() => {
-    const saveToCache = async () => {
+    const unsubscribe = navigation.addListener("blur", async () => {
       try {
-        const dataToStore = {
+        const dataToStore: SplitState = {
           receiptName,
           buyers,
           tax,
           items,
+          settings: {
+            darkMode,
+            offWhiteMode,
+            yuckMode,
+            randomMode,
+            splitTaxEvenly,
+          },
         };
         await AsyncStorage.setItem(
           SPLIT_STORAGE_KEY,
           JSON.stringify(dataToStore)
         );
       } catch (error) {
-        console.log("failed to save to cache:", error);
+        console.log("failed to save state on blur:", error);
       }
-    };
-    saveToCache();
-  }, [receiptName, buyers, tax, items]);
+    });
+    return unsubscribe;
+  }, [
+    navigation,
+    receiptName,
+    buyers,
+    tax,
+    items,
+    darkMode,
+    offWhiteMode,
+    yuckMode,
+    randomMode,
+    splitTaxEvenly,
+  ]);
 
-  // fade out sign-in banner
+  // ----------------------------
+  // Random Colors effect
+  // ----------------------------
+  useEffect(() => {
+    let intervalId: NodeJS.Timeout;
+    if (randomMode) {
+      intervalId = setInterval(() => {
+        setRandomTheme({
+          white: getRandomHexColor(),
+          offWhite: getRandomHexColor(),
+          offWhite2: getRandomHexColor(),
+          lightGray: getRandomHexColor(),
+          lightGray2: getRandomHexColor(),
+          yellow: getRandomHexColor(),
+          green: getRandomHexColor(),
+          yuck: getRandomHexColor(),
+          yuckLight: getRandomHexColor(),
+          blood: getRandomHexColor(),
+          orange: getRandomHexColor(),
+          gray1: getRandomHexColor(),
+          black: getRandomHexColor(),
+          textDefault: getRandomHexColor(),
+          extraYuckLight: getRandomHexColor(),
+        });
+      }, 1000);
+    }
+    return () => {
+      if (intervalId) clearInterval(intervalId);
+    };
+  }, [randomMode]);
+
+  // determine current theme
+  const currentTheme = randomMode
+    ? randomTheme
+    : yuckMode
+    ? yuckTheme
+    : offWhiteMode
+    ? offWhiteTheme
+    : darkMode
+    ? darkTheme
+    : colors;
+
+  // text color logic
+  const nonButtonTextColor = yuckMode
+    ? currentTheme.extraYuckLight
+    : darkMode
+    ? currentTheme.textDefault
+    : currentTheme.black;
+
+  const effectiveImportButtonColor =
+    randomMode || offWhiteMode || yuckMode || darkMode
+      ? currentTheme.yellow
+      : importButtonColor;
+
+  const effectiveSaveButtonColor =
+    randomMode || offWhiteMode || yuckMode || darkMode
+      ? currentTheme.yellow
+      : saveButtonColor;
+
+  // banner animations
   const fadeOutBanner = () => {
     setTimeout(() => {
       Animated.timing(bannerOpacity, {
@@ -247,7 +335,6 @@ const Split = () => {
     }, 1500);
   };
 
-  // fade in/out "Receipt Saved"
   const showReceiptSavedBanner = () => {
     setShowSavedBanner(true);
     savedBannerOpacity.setValue(0);
@@ -268,7 +355,7 @@ const Split = () => {
     });
   };
 
-  // handle save
+  // handlers
   const handleSaveReceipt = async () => {
     if (!auth.currentUser) {
       setShowSignInBanner(true);
@@ -280,17 +367,13 @@ const Split = () => {
       }).start(fadeOutBanner);
       return;
     }
-
-    setSaveButtonColor(colors.green);
-    setTimeout(() => setSaveButtonColor(colors.yellow), 100);
-
+    setSaveButtonColor(currentTheme.green);
+    setTimeout(() => setSaveButtonColor(currentTheme.yellow), 100);
     try {
       const userId = auth.currentUser.uid;
       let finalReceiptName = receiptName.trim() || "untitled receipt";
-
       const userReceiptsRef = ref(database, `receipts/${userId}`);
       const snapshot = await get(userReceiptsRef);
-
       if (snapshot.exists()) {
         let suffix = 1;
         let candidateName = finalReceiptName;
@@ -300,7 +383,6 @@ const Split = () => {
         }
         finalReceiptName = candidateName;
       }
-
       const receiptRef = ref(
         database,
         `receipts/${userId}/${finalReceiptName}`
@@ -312,16 +394,14 @@ const Split = () => {
         tax,
         time_and_date: new Date().toISOString(),
       });
-
       showReceiptSavedBanner();
     } catch (error) {
       console.log("save error:", error);
-      setSaveButtonColor(colors.yellow);
+      setSaveButtonColor(currentTheme.yellow);
       Alert.alert("Error", "failed to save receipt.");
     }
   };
 
-  // handle import
   const handleImportReceipt = () => {
     if (!auth.currentUser) {
       setShowSignInBanner(true);
@@ -336,26 +416,24 @@ const Split = () => {
     navigation.navigate("ImportReceipts");
   };
 
-  // add tax
   const handleAddTax = () => {
     const parsedTax = parseFloat(taxInput);
     setTax(!isNaN(parsedTax) ? parsedTax : 0);
     setTaxInput("");
   };
 
-  // add item
   const handleSubmitItem = () => {
     const name = itemNameInput.trim();
     if (!name) return;
     let price: number;
     try {
+      // eslint-disable-next-line no-eval
       price = eval(itemPriceInput);
       if (isNaN(price) || price <= 0) throw new Error();
     } catch {
       Alert.alert("Invalid Price", "please enter a valid price.");
       return;
     }
-
     const newItem: ItemType = {
       item: name,
       price,
@@ -367,14 +445,12 @@ const Split = () => {
     setItemPriceInput("");
   };
 
-  // finalize quantity
   const finalizeQuantity = (itemIndex: number) => {
     setItems((prevItems) =>
       prevItems.map((item, idx) => {
         if (idx !== itemIndex) return item;
         const finalVal = item.tempQuantity ?? item.quantity.toString();
         const newQuantity = parseInt(finalVal, 10);
-
         if (isNaN(newQuantity) || newQuantity < 1) {
           const { tempQuantity, ...rest } = item;
           return { ...rest, quantity: 1 };
@@ -396,7 +472,6 @@ const Split = () => {
     );
   };
 
-  // toggle buyer selection
   const toggleBuyerSelection = (
     itemIndex: number,
     buyerIndex: number,
@@ -416,22 +491,18 @@ const Split = () => {
     );
   };
 
-  // new buyer
-  const [buyerNameInput, setBuyerNameInput] = useState("");
+  const [buyerNameInput, setBuyerNameInput] = useState<string>("");
   const handleAddBuyer = () => {
     const name = buyerNameInput.trim();
     if (!name) return;
     let newName = name;
     let duplicateCount = 1;
-
     while (buyers.find((b) => b.name === newName)) {
       duplicateCount++;
       newName = `${name} (${duplicateCount})`;
     }
-    const newBuyer = { name: newName, selected: [] };
+    const newBuyer: BuyerObject = { name: newName, selected: [] };
     setBuyers((prev) => [...prev, newBuyer]);
-
-    // also add buyer to existing items
     setItems((prevItems) =>
       prevItems.map((item) => ({
         ...item,
@@ -441,25 +512,20 @@ const Split = () => {
         ],
       }))
     );
-
     setBuyerNameInput("");
     setTimeout(() => buyerRef.current?.focus(), 0);
   };
 
-  // cost per buyer
   const calculateBuyerOwes = () => {
     const buyerTotals = buyers.map(() => 0);
     let totalCostWithoutTax = 0;
-
     items.forEach((item) => {
       for (let i = 0; i < item.quantity; i++) {
         const selectedBuyers = item.buyers.filter((b) => b.selected[i]);
         if (selectedBuyers.length === 0) continue;
         const itemCostPerBuyer = item.price / selectedBuyers.length;
         selectedBuyers.forEach((b) => {
-          const buyerIndex = buyers.findIndex(
-            (buyer) => buyer.name === b.name
-          );
+          const buyerIndex = buyers.findIndex((by) => by.name === b.name);
           if (buyerIndex !== -1) {
             buyerTotals[buyerIndex] += itemCostPerBuyer;
             totalCostWithoutTax += itemCostPerBuyer;
@@ -467,19 +533,14 @@ const Split = () => {
         });
       }
     });
-
     if (buyers.length === 0) return buyerTotals;
-
     if (items.length === 0 && tax > 0) {
-      // no items but there's tax => split evenly
       const taxPerBuyer = tax / buyers.length;
       return buyerTotals.map((total) => total + taxPerBuyer);
     } else if (splitTaxEvenly) {
-      // user wants to split tax evenly
       const taxPerBuyer = tax / buyers.length;
       return buyerTotals.map((total) => total + taxPerBuyer);
     } else {
-      // split tax proportionally
       if (totalCostWithoutTax > 0) {
         return buyerTotals.map((total) => {
           if (total === 0) return total;
@@ -492,8 +553,6 @@ const Split = () => {
   };
 
   const buyerTotals = calculateBuyerOwes();
-
-  // total
   const calculateTotalCost = () => {
     let total = 0;
     items.forEach((item) => {
@@ -502,7 +561,6 @@ const Split = () => {
     return total + tax;
   };
 
-  // clear data
   const handleClearData = () => {
     setReceiptName("untitled receipt");
     setBuyers([]);
@@ -510,601 +568,717 @@ const Split = () => {
     setTax(0);
   };
 
-  // go home
   const goHome = () => {
     navigation.navigate("MainTabs", { screen: "Home" });
   };
 
-  // safe string function to avoid crashing if old data is an object
-  function safeString(val: any) {
+  function safeString(val: any): string {
     return typeof val === "string" ? val : JSON.stringify(val);
   }
 
+  const buyerRef = useRef<TextInput | null>(null);
+  const itemNameRef = useRef<TextInput | null>(null);
+  const priceRef = useRef<TextInput | null>(null);
+
+  if (!isInitialized) {
+    return (
+      <SafeAreaView
+        style={{
+          flex: 1,
+          backgroundColor: "#000000",
+          justifyContent: "center",
+          alignItems: "center",
+        }}
+      >
+        <ActivityIndicator size="large" color="#ffffff" />
+      </SafeAreaView>
+    );
+  }
+
+  // checkmark color for editing receipt name
+  const checkmarkColor = darkMode
+    ? currentTheme.textDefault
+    : yuckMode
+    ? currentTheme.black
+    : currentTheme.black;
+
+  // revert the displayed name color in yuck theme to extraYuckLight
+  const displayReceiptNameColor = yuckMode
+    ? currentTheme.extraYuckLight
+    : nonButtonTextColor;
+
   return (
-    <KeyboardAvoidingView
-      style={[styles.container, darkMode ? darkStyles.container : null]}
-      behavior={Platform.OS === "ios" ? "padding" : undefined}
-    >
-      {/* sign-in banner */}
-      {showSignInBanner && (
-        <Animated.View style={[styles.signInBanner, { opacity: bannerOpacity }]}>
-          <Text style={styles.signInBannerText}>
-            {importButtonColor === "red"
-              ? "Sign In To Import Receipts"
-              : "Sign In To Save Receipts"}
-          </Text>
-        </Animated.View>
-      )}
-
-      {/* "Receipt Saved" banner */}
-      {showSavedBanner && (
-        <Animated.View style={[styles.savedBanner, { opacity: savedBannerOpacity }]}>
-          <Text style={styles.savedBannerText}>Receipt Saved</Text>
-        </Animated.View>
-      )}
-
-      <ScrollView contentContainerStyle={styles.scrollContent}>
-        {/* top buttons */}
-        <View style={styles.topButtonsContainer}>
-          {/* Home Button */}
-          <Pressable style={styles.topButton} onPress={goHome}>
-            {({ pressed }) => (
-              <FontAwesome5
-                name="home"
-                size={24}
-                color={pressed ? colors.green : colors.yellow}
-              />
-            )}
-          </Pressable>
-
-          {/* Center Buttons Container */}
-          <View style={styles.centerButtonsContainer}>
-            {/* Import */}
-            <Pressable
-              style={({ pressed }) => [
-                styles.topButton,
-                {
-                  backgroundColor: pressed ? colors.lightGray : importButtonColor,
-                  borderWidth: 1,
-                  borderColor: colors.black,
-                  paddingHorizontal: 10,
-                },
-              ]}
-              onPress={handleImportReceipt}
-            >
-              <Text style={[styles.buttonText, { color: colors.black }]}>
-                Import
-              </Text>
-            </Pressable>
-
-            {/* Save */}
-            <Pressable
-              style={({ pressed }) => [
-                styles.topButton,
-                {
-                  backgroundColor: pressed ? colors.lightGray : saveButtonColor,
-                  borderWidth: 1,
-                  borderColor: colors.black,
-                  paddingHorizontal: 10,
-                  marginHorizontal: 10,
-                },
-              ]}
-              onPress={handleSaveReceipt}
-            >
-              <Text style={[styles.buttonText, { color: colors.black }]}>
-                Save
-              </Text>
-            </Pressable>
-
-            {/* Reset */}
-            <Pressable
-              style={({ pressed }) => [
-                styles.topButton,
-                styles.clearDataButton,
-                {
-                  backgroundColor: pressed ? colors.green : colors.yellow,
-                },
-              ]}
-              onPress={handleClearData}
-            >
-              <Text style={[styles.buttonText, { color: colors.black }]}>
-                Reset
-              </Text>
-            </Pressable>
-          </View>
-
-          {/* Settings Button */}
-          <Pressable style={styles.topButton} onPress={() => setShowSettings(true)}>
-            {({ pressed }) => (
-              <FontAwesome5
-                name="cog"
-                size={24}
-                color={pressed ? colors.green : colors.yellow}
-              />
-            )}
-          </Pressable>
-        </View>
-
-        {/* receipt name area */}
-        <View
-          style={[
-            styles.receiptNameContainer,
-            darkMode ? darkStyles.receiptNameContainer : null,
-          ]}
-        >
-          {isEditingReceiptName ? (
-            <View style={{ position: "relative", width: "100%" }}>
-              <View style={{ alignItems: "center" }}>
-                <TextInput
-                  style={[
-                    styles.inputField,
-                    { width: "80%", textAlign: "center" },
-                    darkMode ? darkStyles.inputField : null,
-                  ]}
-                  value={receiptName}
-                  onChangeText={setReceiptName}
-                  autoFocus
-                  onBlur={() => setIsEditingReceiptName(false)}
-                />
-              </View>
-              {/* The checkmark is positioned halfway between the right edge of the text input (10% margin)
-                  and the right side of the screen (0 margin). */}
-              <TouchableOpacity
-                onPress={() => setIsEditingReceiptName(false)}
-                style={{
-                  position: "absolute",
-                  right: "0%",
-                  top: "50%",
-                  transform: [{ translateY: -10 }],
-                }}
-              >
-                <FontAwesome5 name="check" size={20} color={colors.black} />
-              </TouchableOpacity>
-            </View>
-          ) : (
-            <View style={{ position: "relative", width: "100%", alignItems: "center" }}>
-              <Text style={{ textAlign: "center", fontSize: 18, color: colors.black }}>
-                {receiptName}
-              </Text>
-              <TouchableOpacity
-                onPress={() => setIsEditingReceiptName(true)}
-                style={{
-                  position: "absolute",
-                  right: 15,
-                  top: "50%",
-                  transform: [{ translateY: -10 }],
-                }}
-              >
-                <FontAwesome5 name="pencil-alt" size={20} color={colors.black} />
-              </TouchableOpacity>
-            </View>
-          )}
-        </View>
-
-        {/* buyers + tax row */}
-        <View style={styles.rowContainer}>
-          {/* buyers form */}
-          <View
+    <SafeAreaView style={{ flex: 1, backgroundColor: currentTheme.offWhite2 }}>
+      <StatusBar backgroundColor="#000000" barStyle="light-content" />
+      <KeyboardAvoidingView
+        style={[
+          styles.container,
+          darkMode ? darkStyles.container : null,
+          { backgroundColor: currentTheme.offWhite2 },
+        ]}
+        behavior={Platform.OS === "ios" ? "padding" : undefined}
+      >
+        {/* Sign-In Banner */}
+        {showSignInBanner && (
+          <Animated.View
             style={[
-              styles.formContainer,
-              styles.buyersForm,
-              darkMode ? darkStyles.buyersForm : null,
+              styles.signInBanner,
+              { opacity: bannerOpacity, backgroundColor: currentTheme.blood },
             ]}
           >
             <Text
-              style={[
-                styles.alignedLabel,
-                { color: darkMode ? colors.white : colors.black },
-              ]}
+              style={[styles.signInBannerText, { color: currentTheme.white }]}
             >
-              Buyers:
+              {importButtonColor === "red"
+                ? "Sign In To Import Receipts"
+                : "Sign In To Save Receipts"}
             </Text>
-            <TextInput
-              ref={buyerRef}
-              style={[
-                styles.inputField,
-                { width: "75%" },
-                darkMode ? darkStyles.inputField : null,
-              ]}
-              placeholder="Enter a buyer"
-              placeholderTextColor={darkMode ? "#999" : "#000"}
-              value={buyerNameInput}
-              onChangeText={setBuyerNameInput}
-              onSubmitEditing={handleAddBuyer}
-              returnKeyType="done"
-            />
-            <Pressable
-              onPress={handleAddBuyer}
-              style={({ pressed }) => [
-                styles.addButton,
-                styles.borderBlack,
-                styles.addBuyersTaxButtons,
-                {
-                  width: "75%",
-                  backgroundColor: pressed ? colors.green : colors.yellow,
-                },
-              ]}
-            >
-              <Text style={styles.buttonText}>Add</Text>
-            </Pressable>
-          </View>
+          </Animated.View>
+        )}
 
-          {/* tax form */}
-          <View
+        {/* "Receipt Saved" Banner */}
+        {showSavedBanner && (
+          <Animated.View
             style={[
-              styles.formContainer,
-              styles.taxForm,
-              darkMode ? darkStyles.taxForm : null,
-            ]}
-          >
-            <Text
-              style={[
-                styles.alignedLabel,
-                { color: darkMode ? colors.white : colors.black },
-              ]}
-            >
-              Tax:
-            </Text>
-            <TextInput
-              style={[
-                styles.inputField,
-                { width: "75%" },
-                darkMode ? darkStyles.inputField : null,
-              ]}
-              placeholder="0.00"
-              placeholderTextColor={darkMode ? "#999" : "#000"}
-              keyboardType="numeric"
-              value={taxInput}
-              onChangeText={setTaxInput}
-              onSubmitEditing={handleAddTax}
-              returnKeyType="done"
-            />
-            <Pressable
-              onPress={handleAddTax}
-              style={({ pressed }) => [
-                styles.addButton,
-                styles.borderBlack,
-                styles.addBuyersTaxButtons,
-                {
-                  width: "75%",
-                  backgroundColor: pressed ? colors.green : colors.yellow,
-                },
-              ]}
-            >
-              <Text style={styles.buttonText}>Add</Text>
-            </Pressable>
-          </View>
-        </View>
-
-        {/* item form */}
-        <View style={styles.itemForm}>
-          <View style={[styles.itemInputRow, { justifyContent: "center" }]}>
-            <Text style={styles.itemLabel}>Item:</Text>
-            <TextInput
-              ref={itemNameRef}
-              style={[styles.itemInput]}
-              value={itemNameInput}
-              onChangeText={setItemNameInput}
-              onSubmitEditing={() => {
-                priceRef.current?.focus();
-              }}
-              returnKeyType="next"
-            />
-          </View>
-          <View style={[styles.itemInputRow, { justifyContent: "center" }]}>
-            <Text style={styles.itemLabel}>Price: $</Text>
-            <TextInput
-              ref={priceRef}
-              style={[styles.itemInput]}
-              value={itemPriceInput}
-              onChangeText={setItemPriceInput}
-              keyboardType="numeric"
-              onSubmitEditing={() => {
-                handleSubmitItem();
-                setTimeout(() => itemNameRef.current?.focus(), 0);
-              }}
-              returnKeyType="done"
-            />
-          </View>
-          <Pressable
-            onPress={() => {
-              handleSubmitItem();
-              setTimeout(() => itemNameRef.current?.focus(), 0);
-            }}
-            style={({ pressed }) => [
-              styles.submitItemButton,
-              styles.borderBlack,
+              styles.savedBanner,
               {
-                width: "70%",
-                backgroundColor: pressed ? colors.green : colors.yellow,
+                opacity: savedBannerOpacity,
+                backgroundColor: currentTheme.green,
               },
             ]}
           >
-            <Text style={styles.buttonText}>Add</Text>
-          </Pressable>
-        </View>
+            <Text
+              style={[styles.savedBannerText, { color: currentTheme.white }]}
+            >
+              Receipt Saved
+            </Text>
+          </Animated.View>
+        )}
 
-        {/* cost per buyer */}
-        <View style={styles.costPerBuyerSection}>
-          <Text
+        <ScrollView contentContainerStyle={styles.scrollContent}>
+          {/* Top Buttons */}
+          <View style={styles.topButtonsContainer}>
+            <Pressable style={styles.topButton} onPress={goHome}>
+              {({ pressed }) => (
+                <FontAwesome5
+                  name="home"
+                  size={24}
+                  color={pressed ? currentTheme.green : currentTheme.yellow}
+                />
+              )}
+            </Pressable>
+
+            <View style={styles.centerButtonsContainer}>
+              <Pressable
+                style={({ pressed }) => [
+                  styles.topButton,
+                  {
+                    backgroundColor: pressed
+                      ? currentTheme.lightGray
+                      : effectiveImportButtonColor,
+                    borderWidth: 1,
+                    borderColor: currentTheme.black,
+                    paddingHorizontal: 10,
+                  },
+                ]}
+                onPress={handleImportReceipt}
+              >
+                <Text
+                  style={[styles.buttonText, { color: currentTheme.black }]}
+                >
+                  Import
+                </Text>
+              </Pressable>
+
+              <Pressable
+                style={({ pressed }) => [
+                  styles.topButton,
+                  {
+                    backgroundColor: pressed
+                      ? currentTheme.lightGray
+                      : effectiveSaveButtonColor,
+                    borderWidth: 1,
+                    borderColor: currentTheme.black,
+                    paddingHorizontal: 10,
+                    marginHorizontal: 10,
+                  },
+                ]}
+                onPress={handleSaveReceipt}
+              >
+                <Text
+                  style={[styles.buttonText, { color: currentTheme.black }]}
+                >
+                  Save
+                </Text>
+              </Pressable>
+
+              <Pressable
+                style={({ pressed }) => [
+                  styles.topButton,
+                  styles.clearDataButton,
+                  {
+                    backgroundColor: pressed
+                      ? currentTheme.green
+                      : currentTheme.yellow,
+                  },
+                ]}
+                onPress={handleClearData}
+              >
+                <Text
+                  style={[styles.buttonText, { color: currentTheme.black }]}
+                >
+                  Reset
+                </Text>
+              </Pressable>
+            </View>
+
+            <SettingsButton
+              currentTheme={currentTheme}
+              darkMode={darkMode}
+              setDarkMode={setDarkMode}
+              offWhiteMode={offWhiteMode}
+              setOffWhiteMode={setOffWhiteMode}
+              yuckMode={yuckMode}
+              setYuckMode={setYuckMode}
+              randomMode={randomMode}
+              setRandomMode={setRandomMode}
+              splitTaxEvenly={splitTaxEvenly}
+              setSplitTaxEvenly={setSplitTaxEvenly}
+              colors={colors}
+            />
+          </View>
+
+          {/* Receipt Name */}
+          <View
             style={[
-              styles.sectionTitle,
-              { color: darkMode ? colors.white : colors.black },
+              styles.receiptNameContainer,
+              darkMode
+                ? darkStyles.receiptNameContainer
+                : { backgroundColor: currentTheme.lightGray2 },
+              offWhiteMode && { backgroundColor: currentTheme.offWhite2 },
             ]}
           >
-            Cost per Buyer:
-          </Text>
-          {buyers.length > 0 ? (
-            buyers.map((buyer, index) => (
-              <Text
-                key={index}
-                style={[
-                  styles.buyerCostText,
-                  { color: darkMode ? colors.white : colors.black },
-                ]}
+            {isEditingReceiptName ? (
+              <View style={{ position: "relative", width: "100%" }}>
+                <View style={{ alignItems: "center" }}>
+                  <TextInput
+                    style={[
+                      styles.inputField,
+                      {
+                        width: "80%",
+                        textAlign: "center",
+                        color: yuckMode
+                          ? currentTheme.black
+                          : nonButtonTextColor,
+                        borderColor: currentTheme.gray1,
+                        backgroundColor: yuckMode
+                          ? currentTheme.extraYuckLight
+                          : undefined,
+                      },
+                      darkMode ? darkStyles.inputField : null,
+                    ]}
+                    value={receiptName}
+                    onChangeText={setReceiptName}
+                    autoFocus
+                    onBlur={() => setIsEditingReceiptName(false)}
+                  />
+                </View>
+                <TouchableOpacity
+                  onPress={() => setIsEditingReceiptName(false)}
+                  style={{
+                    position: "absolute",
+                    right: "0%",
+                    top: "50%",
+                    transform: [{ translateY: -10 }],
+                  }}
+                >
+                  <FontAwesome5 name="check" size={20} color={checkmarkColor} />
+                </TouchableOpacity>
+              </View>
+            ) : (
+              <View
+                style={{
+                  position: "relative",
+                  width: "100%",
+                  alignItems: "center",
+                }}
               >
-                {/** safe print: if buyer.name isn't a string, show json */}
-                {safeString(buyer.name)}: $
-                {buyerTotals[index]?.toFixed(2) || "0.00"}
-              </Text>
-            ))
-          ) : (
-            <Text
+                <Text
+                  style={{
+                    textAlign: "center",
+                    fontSize: 18,
+                    color: displayReceiptNameColor,
+                  }}
+                >
+                  {receiptName}
+                </Text>
+                <TouchableOpacity
+                  onPress={() => setIsEditingReceiptName(true)}
+                  style={{
+                    position: "absolute",
+                    right: 15,
+                    top: "50%",
+                    transform: [{ translateY: -10 }],
+                  }}
+                >
+                  <FontAwesome5
+                    name="pencil-alt"
+                    size={20}
+                    color={
+                      darkMode ? currentTheme.textDefault : currentTheme.black
+                    }
+                  />
+                </TouchableOpacity>
+              </View>
+            )}
+          </View>
+
+          {/* Buyers & Tax */}
+          <View style={styles.rowContainer}>
+            <View
               style={[
-                styles.buyerCostText,
-                { color: darkMode ? colors.white : colors.black },
+                styles.formContainer,
+                styles.buyersForm,
+                darkMode
+                  ? darkStyles.buyersForm
+                  : { backgroundColor: currentTheme.lightGray },
               ]}
             >
-              No buyers added.
-            </Text>
-          )}
-        </View>
+              <Text
+                style={[
+                  styles.alignedLabel,
+                  { color: nonButtonTextColor, marginBottom: 4 },
+                ]}
+              >
+                Buyers:
+              </Text>
+              <TextInput
+                ref={buyerRef}
+                style={[
+                  styles.inputField,
+                  {
+                    width: "75%",
+                    textAlign: "center",
+                    backgroundColor: yuckMode
+                      ? currentTheme.extraYuckLight
+                      : currentTheme.offWhite2,
+                    color: yuckMode ? currentTheme.black : currentTheme.black,
+                    borderColor: currentTheme.gray1,
+                  },
+                  darkMode ? darkStyles.inputField : null,
+                ]}
+                placeholder="Enter a buyer"
+                placeholderTextColor={darkMode ? "#999" : currentTheme.black}
+                value={buyerNameInput}
+                onChangeText={setBuyerNameInput}
+                onSubmitEditing={handleAddBuyer}
+                returnKeyType="done"
+              />
+              <Pressable
+                onPress={handleAddBuyer}
+                style={({ pressed }) => [
+                  styles.addButton,
+                  styles.borderBlack,
+                  styles.addBuyersTaxButtons,
+                  {
+                    width: "75%",
+                    backgroundColor: pressed
+                      ? currentTheme.green
+                      : currentTheme.yellow,
+                  },
+                ]}
+              >
+                <Text style={styles.buttonText}>Add</Text>
+              </Pressable>
+            </View>
 
-        {/* tax & total */}
-        <Text
-          style={[
-            styles.displayText,
-            { color: darkMode ? colors.white : colors.black },
-          ]}
-        >
-          Tax Amount: ${tax.toFixed(2)}
-        </Text>
-        <Text
-          style={[
-            styles.displayText,
-            { color: darkMode ? colors.white : colors.black },
-          ]}
-        >
-          Total Cost: ${calculateTotalCost().toFixed(2)}
-        </Text>
-
-        {/* grid titles */}
-        <View style={[styles.gridTitles, darkMode ? darkStyles.gridTitles : null]}>
-          <Text
-            style={[
-              styles.gridCell,
-              styles.firstGridCell,
-              styles.gridTitleText,
-              { flex: 0.9, color: darkMode ? colors.offWhite2 : colors.black },
-              darkMode ? darkStyles.gridCell : null,
-            ]}
-          >
-            Item
-          </Text>
-          <Text
-            style={[
-              styles.gridCell,
-              styles.gridTitleText,
-              { flex: 0.5, color: darkMode ? colors.offWhite2 : colors.black },
-              darkMode ? darkStyles.gridCell : null,
-            ]}
-          >
-            Price
-          </Text>
-          <Text
-            style={[
-              styles.gridCell,
-              styles.gridTitleText,
-              { flex: 0.4, color: darkMode ? colors.offWhite2 : colors.black },
-              darkMode ? darkStyles.gridCell : null,
-            ]}
-          >
-            Qty
-          </Text>
-          <Text
-            style={[
-              styles.gridCell,
-              styles.gridTitleText,
-              { flex: 1.2, color: darkMode ? colors.offWhite2 : colors.black },
-              darkMode ? darkStyles.gridCell : null,
-            ]}
-          >
-            Buyers
-          </Text>
-        </View>
-
-        {/* items */}
-        {items.map((item, itemIndex) => (
-          <View
-            key={itemIndex}
-            style={[styles.gridRow, darkMode ? darkStyles.gridRow : null]}
-          >
             <View
+              style={[
+                styles.formContainer,
+                styles.taxForm,
+                darkMode
+                  ? darkStyles.taxForm
+                  : { backgroundColor: currentTheme.lightGray },
+              ]}
+            >
+              <Text
+                style={[
+                  styles.alignedLabel,
+                  { color: nonButtonTextColor, marginBottom: 4 },
+                ]}
+              >
+                Tax:
+              </Text>
+              <TextInput
+                style={[
+                  styles.inputField,
+                  {
+                    width: "75%",
+                    backgroundColor: yuckMode
+                      ? currentTheme.extraYuckLight
+                      : currentTheme.offWhite2,
+                    color: yuckMode ? currentTheme.black : currentTheme.black,
+                    borderColor: currentTheme.gray1,
+                  },
+                  darkMode ? darkStyles.inputField : null,
+                ]}
+                placeholder="0.00"
+                placeholderTextColor={darkMode ? "#999" : currentTheme.black}
+                keyboardType="numeric"
+                value={taxInput}
+                onChangeText={setTaxInput}
+                onSubmitEditing={handleAddTax}
+                returnKeyType="done"
+              />
+              <Pressable
+                onPress={handleAddTax}
+                style={({ pressed }) => [
+                  styles.addButton,
+                  styles.borderBlack,
+                  styles.addBuyersTaxButtons,
+                  {
+                    width: "75%",
+                    backgroundColor: pressed
+                      ? currentTheme.green
+                      : currentTheme.yellow,
+                  },
+                ]}
+              >
+                <Text style={styles.buttonText}>Add</Text>
+              </Pressable>
+            </View>
+          </View>
+
+          {/* Item Form */}
+          <View
+            style={[
+              styles.itemForm,
+              { backgroundColor: currentTheme.lightGray2 },
+              offWhiteMode && { backgroundColor: currentTheme.lightGray },
+              darkMode ? darkStyles.itemForm : null,
+            ]}
+          >
+            <View style={[styles.itemInputRow, { justifyContent: "center" }]}>
+              <Text style={[styles.itemLabel, { color: nonButtonTextColor }]}>
+                Item:
+              </Text>
+              <TextInput
+                ref={itemNameRef}
+                style={[
+                  styles.inputField,
+                  styles.itemInput,
+                  {
+                    backgroundColor: yuckMode
+                      ? currentTheme.extraYuckLight
+                      : darkMode
+                      ? "#1e1e1e"
+                      : currentTheme.offWhite2,
+                    color: yuckMode
+                      ? currentTheme.black
+                      : darkMode
+                      ? "#ffffff"
+                      : currentTheme.black,
+                    borderColor: currentTheme.gray1,
+                  },
+                ]}
+                value={itemNameInput}
+                onChangeText={setItemNameInput}
+                onSubmitEditing={() => {
+                  priceRef.current?.focus();
+                }}
+                returnKeyType="next"
+              />
+            </View>
+            <View style={[styles.itemInputRow, { justifyContent: "center" }]}>
+              <Text style={[styles.itemLabel, { color: nonButtonTextColor }]}>
+                Price: $
+              </Text>
+              <TextInput
+                ref={priceRef}
+                style={[
+                  styles.inputField,
+                  styles.itemInput,
+                  {
+                    backgroundColor: yuckMode
+                      ? currentTheme.extraYuckLight
+                      : darkMode
+                      ? "#1e1e1e"
+                      : currentTheme.offWhite2,
+                    color: yuckMode
+                      ? currentTheme.black
+                      : darkMode
+                      ? "#ffffff"
+                      : currentTheme.black,
+                    borderColor: currentTheme.gray1,
+                  },
+                ]}
+                value={itemPriceInput}
+                onChangeText={setItemPriceInput}
+                keyboardType="numeric"
+                onSubmitEditing={() => {
+                  handleSubmitItem();
+                  setTimeout(() => itemNameRef.current?.focus(), 0);
+                }}
+                returnKeyType="done"
+              />
+            </View>
+            <Pressable
+              onPress={() => {
+                handleSubmitItem();
+                setTimeout(() => itemNameRef.current?.focus(), 0);
+              }}
+              style={({ pressed }) => [
+                styles.submitItemButton,
+                styles.borderBlack,
+                {
+                  width: "70%",
+                  backgroundColor: pressed
+                    ? currentTheme.green
+                    : currentTheme.yellow,
+                },
+              ]}
+            >
+              <Text style={styles.buttonText}>Add</Text>
+            </Pressable>
+          </View>
+
+          {/* Cost Per Buyer */}
+          <View style={styles.costPerBuyerSection}>
+            <Text style={[styles.sectionTitle, { color: nonButtonTextColor }]}>
+              Cost per Buyer:
+            </Text>
+            {buyers.length > 0 ? (
+              buyers.map((buyer, index) => (
+                <Text
+                  key={index}
+                  style={[styles.buyerCostText, { color: nonButtonTextColor }]}
+                >
+                  {safeString(buyer.name)}: $
+                  {buyerTotals[index]?.toFixed(2) || "0.00"}
+                </Text>
+              ))
+            ) : (
+              <Text
+                style={[styles.buyerCostText, { color: nonButtonTextColor }]}
+              >
+                No buyers added.
+              </Text>
+            )}
+          </View>
+
+          {/* Tax & Total */}
+          <Text style={[styles.displayText, { color: nonButtonTextColor }]}>
+            Tax Amount: ${tax.toFixed(2)}
+          </Text>
+          <Text style={[styles.displayText, { color: nonButtonTextColor }]}>
+            Total Cost: ${calculateTotalCost().toFixed(2)}
+          </Text>
+
+          {/* Grid Titles */}
+          <View
+            style={[styles.gridTitles, darkMode ? darkStyles.gridTitles : null]}
+          >
+            <Text
               style={[
                 styles.gridCell,
                 styles.firstGridCell,
-                { flex: 0.9 },
+                styles.gridTitleText,
+                { flex: 1, color: nonButtonTextColor },
                 darkMode ? darkStyles.gridCell : null,
               ]}
             >
-              <View style={styles.cellInner}>
-                <TouchableOpacity
-                  onPress={() =>
-                    setItems((prev) =>
-                      prev.filter((_, idx) => idx !== itemIndex)
-                    )
-                  }
-                  style={styles.trashIcon}
-                >
-                  <FontAwesome5 name="trash" size={16} color="red" />
-                </TouchableOpacity>
-                <Text
-                  style={[
-                    styles.itemNameText,
-                    { color: darkMode ? colors.offWhite2 : colors.black },
-                  ]}
-                >
-                  {/** safe print: if item.item isn't a string, show json */}
-                  {safeString(item.item)}
-                </Text>
-              </View>
-            </View>
-
-            <View
+              Item
+            </Text>
+            <Text
               style={[
                 styles.gridCell,
-                { flex: 0.5 },
+                styles.gridTitleText,
+                { flex: 0.5, color: nonButtonTextColor },
                 darkMode ? darkStyles.gridCell : null,
               ]}
             >
-              <View style={styles.cellInner}>
-                <Text
-                  style={{
-                    color: darkMode ? colors.offWhite2 : colors.black,
-                  }}
-                >
-                  ${item.price.toFixed(2)}
-                </Text>
-              </View>
-            </View>
-
-            <View
+              Price
+            </Text>
+            <Text
               style={[
                 styles.gridCell,
-                { flex: 0.4 },
+                styles.gridTitleText,
+                { flex: 0.4, color: nonButtonTextColor },
                 darkMode ? darkStyles.gridCell : null,
               ]}
             >
-              <View style={styles.cellInner}>
-                <TextInput
-                  style={[
-                    styles.quantityInput,
-                    !darkMode
-                      ? {
-                          backgroundColor: colors.offWhite2,
-                          color: colors.black,
-                        }
-                      : {},
-                    darkMode ? darkStyles.quantityInput : null,
-                  ]}
-                  keyboardType="numeric"
-                  value={
-                    item.tempQuantity !== undefined
-                      ? item.tempQuantity
-                      : item.quantity.toString()
-                  }
-                  onChangeText={(val) => {
-                    setItems((prev) =>
-                      prev.map((it, i) => {
-                        if (i !== itemIndex) return it;
-                        return { ...it, tempQuantity: val };
-                      })
-                    );
-                  }}
-                  onBlur={() => finalizeQuantity(itemIndex)}
-                />
-              </View>
-            </View>
-
-            <View
+              Qty
+            </Text>
+            <Text
               style={[
                 styles.gridCell,
-                { flex: 1.2 },
+                styles.gridTitleText,
+                { flex: 1.1, color: nonButtonTextColor },
                 darkMode ? darkStyles.gridCell : null,
               ]}
             >
-              <View style={styles.cellInner}>
-                {Array.from({ length: item.quantity }).map((_, qtyIndex) => (
-                  <View key={qtyIndex} style={styles.buyerRow}>
-                    {item.buyers.map((buyer, buyerIndex) => (
-                      <View key={buyerIndex} style={styles.buyerContainer}>
-                        <CheckBox
-                          value={buyer.selected[qtyIndex]}
-                          onValueChange={() =>
+              Buyers
+            </Text>
+          </View>
+
+          {/* Items Grid */}
+          {items.map((item, itemIndex) => (
+            <View
+              key={itemIndex}
+              style={[styles.gridRow, darkMode ? darkStyles.gridRow : null]}
+            >
+              <View
+                style={[
+                  styles.gridCell,
+                  styles.firstGridCell,
+                  { flex: 1 },
+                  darkMode ? darkStyles.gridCell : null,
+                ]}
+              >
+                <View style={styles.cellInner}>
+                  <TouchableOpacity
+                    onPress={() =>
+                      setItems((prev) =>
+                        prev.filter((_, idx) => idx !== itemIndex)
+                      )
+                    }
+                    style={styles.trashIcon}
+                  >
+                    {/* less bright red for dark mode => currentTheme.blood */}
+                    <FontAwesome5
+                      name="trash"
+                      size={16}
+                      color={currentTheme.blood}
+                    />
+                  </TouchableOpacity>
+                  <Text
+                    style={[styles.itemNameText, { color: nonButtonTextColor }]}
+                  >
+                    {safeString(item.item)}
+                  </Text>
+                </View>
+              </View>
+              <View
+                style={[
+                  styles.gridCell,
+                  { flex: 0.5 },
+                  darkMode ? darkStyles.gridCell : null,
+                ]}
+              >
+                <View style={styles.cellInner}>
+                  <Text style={{ color: nonButtonTextColor }}>
+                    ${item.price.toFixed(2)}
+                  </Text>
+                </View>
+              </View>
+              <View
+                style={[
+                  styles.gridCell,
+                  { flex: 0.4 },
+                  darkMode ? darkStyles.gridCell : null,
+                ]}
+              >
+                <View style={styles.cellInner}>
+                  <TextInput
+                    style={[
+                      styles.quantityInput,
+                      {
+                        backgroundColor: yuckMode
+                          ? currentTheme.yuck
+                          : darkMode
+                          ? "#333333"
+                          : currentTheme.offWhite2,
+                        borderColor: yuckMode
+                          ? currentTheme.extraYuckLight
+                          : darkMode
+                          ? "#555555"
+                          : currentTheme.gray1,
+                        color: yuckMode
+                          ? currentTheme.extraYuckLight
+                          : darkMode
+                          ? "#ffffff"
+                          : currentTheme.black,
+                      },
+                      darkMode ? darkStyles.quantityInput : null,
+                    ]}
+                    keyboardType="numeric"
+                    value={
+                      item.tempQuantity !== undefined
+                        ? item.tempQuantity
+                        : item.quantity.toString()
+                    }
+                    onChangeText={(val) => {
+                      setItems((prev) =>
+                        prev.map((it, i) => {
+                          if (i !== itemIndex) return it;
+                          return { ...it, tempQuantity: val };
+                        })
+                      );
+                    }}
+                    onBlur={() => finalizeQuantity(itemIndex)}
+                  />
+                </View>
+              </View>
+              <View
+                style={[
+                  styles.gridCell,
+                  { flex: 1.1 },
+                  darkMode ? darkStyles.gridCell : null,
+                ]}
+              >
+                <View style={styles.cellInner}>
+                  {Array.from({ length: item.quantity }).map((_, qtyIndex) => (
+                    <View key={qtyIndex} style={styles.buyerRow}>
+                      {item.buyers.map((buyer, buyerIndex) => (
+                        <TouchableOpacity
+                          key={buyerIndex}
+                          style={styles.buyerContainer}
+                          onPress={() =>
                             toggleBuyerSelection(
                               itemIndex,
                               buyerIndex,
                               qtyIndex
                             )
                           }
-                        />
-                        <Text
-                          style={[
-                            styles.buyerLabel,
-                            {
-                              color: darkMode ? colors.offWhite2 : colors.black,
-                            },
-                          ]}
                         >
-                          {safeString(buyer.name)}
-                        </Text>
-                      </View>
-                    ))}
-                  </View>
-                ))}
+                          <CheckBox
+                            value={buyer.selected[qtyIndex]}
+                            onValueChange={() =>
+                              toggleBuyerSelection(
+                                itemIndex,
+                                buyerIndex,
+                                qtyIndex
+                              )
+                            }
+                            theme={currentTheme}
+                          />
+                          <Text
+                            style={[
+                              styles.buyerLabel,
+                              { color: nonButtonTextColor },
+                            ]}
+                          >
+                            {safeString(buyer.name)}
+                          </Text>
+                        </TouchableOpacity>
+                      ))}
+                    </View>
+                  ))}
+                </View>
               </View>
             </View>
-          </View>
-        ))}
-      </ScrollView>
-
-      {/* settings modal */}
-      <Modal visible={showSettings} animationType="none" transparent>
-        <TouchableWithoutFeedback onPress={() => setShowSettings(false)}>
-          <View style={styles.modalOverlay}>
-            <TouchableWithoutFeedback>
-              <View style={styles.settingsModal}>
-                <Text style={[styles.modalTitle, { color: colors.black }]}>
-                  Settings
-                </Text>
-                <View style={styles.settingRow}>
-                  <Text style={[styles.settingLabel, { color: colors.black }]}>
-                    Dark Mode
-                  </Text>
-                  <Switch value={darkMode} onValueChange={setDarkMode} />
-                </View>
-                <View style={styles.settingRow}>
-                  <Text style={[styles.settingLabel, { color: colors.black }]}>
-                    Split Tax Evenly
-                  </Text>
-                  <Switch
-                    value={splitTaxEvenly}
-                    onValueChange={setSplitTaxEvenly}
-                  />
-                </View>
-                <Pressable
-                  onPress={() => setShowSettings(false)}
-                  style={({ pressed }) => [
-                    styles.closeButton,
-                    { backgroundColor: pressed ? colors.green : colors.yellow },
-                  ]}
-                >
-                  <Text style={[styles.buttonText, { color: colors.black }]}>
-                    Close
-                  </Text>
-                </Pressable>
-              </View>
-            </TouchableWithoutFeedback>
-          </View>
-        </TouchableWithoutFeedback>
-      </Modal>
-    </KeyboardAvoidingView>
+          ))}
+        </ScrollView>
+      </KeyboardAvoidingView>
+    </SafeAreaView>
   );
 };
 
 export default Split;
 
-/** styles */
+// ----------------------------
+// Styles
+// ----------------------------
 const styles = StyleSheet.create({
   container: {
     flex: 1,
@@ -1135,9 +1309,6 @@ const styles = StyleSheet.create({
   clearDataButton: {
     borderWidth: 1,
     borderColor: colors.black,
-  },
-  settingsButton: {
-    padding: 5,
   },
   buttonText: {
     fontSize: 15,
@@ -1207,14 +1378,10 @@ const styles = StyleSheet.create({
     width: 50,
     textAlign: "right",
     marginRight: 10,
-    justifyContent: "center",
   },
   itemInput: {
     width: 150,
-    borderWidth: 1,
     padding: 5,
-    backgroundColor: colors.offWhite2,
-    color: colors.black,
   },
   submitItemButton: {
     width: "60%",
@@ -1280,6 +1447,7 @@ const styles = StyleSheet.create({
     flexWrap: "wrap",
   },
   cellInner: {
+    // center vertically
     flex: 1,
     justifyContent: "center",
     alignItems: "center",
@@ -1287,15 +1455,14 @@ const styles = StyleSheet.create({
     position: "relative",
   },
   itemNameText: {
-    textAlign: "center",
+    // keep the text from overlapping the trash icon
+    marginLeft: 25,
     flexWrap: "wrap",
-    width: "100%",
-    marginLeft: 10,
   },
   trashIcon: {
     position: "absolute",
-    top: 5,
-    left: 5,
+    top: 10,
+    left: 10,
   },
   quantityInput: {
     borderWidth: 1,
@@ -1323,50 +1490,14 @@ const styles = StyleSheet.create({
     flexWrap: "wrap",
     flexShrink: 1,
   },
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: "rgba(0,0,0,0.3)",
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  settingsModal: {
-    width: "80%",
-    backgroundColor: colors.white,
-    padding: 20,
-    borderRadius: 8,
-    elevation: 5,
-  },
-  modalTitle: {
-    fontSize: 20,
-    textAlign: "center",
-    marginBottom: 15,
-  },
-  settingRow: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    marginBottom: 10,
-  },
-  settingLabel: {
-    fontSize: 16,
-  },
-  closeButton: {
-    paddingVertical: 10,
-    paddingHorizontal: 20,
-    borderRadius: 8,
-    alignItems: "center",
-    marginTop: 15,
-  },
   signInBanner: {
     position: "absolute",
     width: "100%",
     top: 60,
-    backgroundColor: "red",
     padding: 8,
     zIndex: 10,
   },
   signInBannerText: {
-    color: "#fff",
     fontWeight: "600",
     textAlign: "center",
   },
@@ -1374,51 +1505,48 @@ const styles = StyleSheet.create({
     position: "absolute",
     width: "100%",
     top: 100,
-    backgroundColor: "green",
     padding: 8,
     zIndex: 10,
   },
   savedBannerText: {
-    color: "#fff",
     fontWeight: "600",
     textAlign: "center",
   },
 });
 
-// dark mode
 const darkStyles = StyleSheet.create({
   container: {
-    backgroundColor: "#1d1d1d",
+    backgroundColor: "#000000",
   },
   receiptNameContainer: {
-    backgroundColor: "#1e1e1e",
+    backgroundColor: "#121212",
   },
   buyersForm: {
-    backgroundColor: "#6d86b0",
+    backgroundColor: "#1e1e1e",
   },
   taxForm: {
-    backgroundColor: "#7b584f",
+    backgroundColor: "#1e1e1e",
   },
   itemForm: {
-    backgroundColor: "#67654d",
+    backgroundColor: "#1e1e1e",
   },
   inputField: {
-    backgroundColor: colors.offWhite2,
-    color: "#1d1d1d",
-    borderColor: "#1d1d1d",
+    backgroundColor: "#333333",
+    color: "#ffffff",
+    borderColor: "#555555",
   },
   gridTitles: {
-    borderColor: colors.offWhite2,
+    borderColor: "#555555",
   },
   gridRow: {
-    borderColor: colors.offWhite2,
+    borderColor: "#555555",
   },
   gridCell: {
-    borderColor: colors.offWhite2,
+    borderColor: "#555555",
   },
   quantityInput: {
-    borderColor: "#1d1d1d",
-    backgroundColor: "#1d1d1d",
-    color: colors.offWhite2,
+    borderColor: "#555555",
+    backgroundColor: "#333333",
+    color: "#ffffff",
   },
 });

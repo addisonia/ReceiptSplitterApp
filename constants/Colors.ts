@@ -11,4 +11,5 @@ export default {
   white: '#fffff',
   darkGray: 'rgba(56, 56, 56, 0.78)',
   red: 'rgba(255, 0, 0, 0.78)',
+  extraYuckLight: 'rgba(243, 246, 155, 0.54)',
 };
