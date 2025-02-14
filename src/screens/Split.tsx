@@ -162,63 +162,72 @@ const Split: React.FC = () => {
   const importedReceiptUsed = useRef<boolean>(false);
 
   // ----------------------------
-  // Process Imported Receipt
-  // (we do NOT override color toggles here so the user’s color theme remains)
-  // ----------------------------
   useEffect(() => {
-    if (importedReceipt) {
-      const safeItems = (importedReceipt.items ?? []).map((it: ItemType) => {
-        let safeQuantity = it.quantity;
-        if (
-          typeof safeQuantity !== "number" ||
-          isNaN(safeQuantity) ||
-          safeQuantity < 1
-        ) {
-          safeQuantity = 1;
-        }
-        return { ...it, quantity: safeQuantity };
-      });
-      setReceiptName(importedReceipt.name || "untitled receipt");
-      setBuyers(importedReceipt.buyers || []);
-      setItems(safeItems);
-      setTax(importedReceipt.tax || 0);
-      importedReceiptUsed.current = true;
-      setIsInitialized(true);
-      navigation.setParams({ importedReceipt: undefined });
-    }
-  }, [importedReceipt, navigation]);
+    const initializeSplit = async () => { // Create an async initialization function
+        try {
+            const storedData = await AsyncStorage.getItem(SPLIT_STORAGE_KEY);
+            let initialSplitState: SplitState = { // Default state if no cache
+                receiptName: "untitled receipt",
+                buyers: [],
+                tax: 0,
+                items: [],
+                settings: {
+                    darkMode: false,
+                    offWhiteMode: false,
+                    yuckMode: false,
+                    randomMode: false,
+                    splitTaxEvenly: true,
+                },
+            };
 
-  // ----------------------------
-  // Load from Storage
-  // ----------------------------
-  useEffect(() => {
-    const loadCachedData = async () => {
-      if (importedReceiptUsed.current) return;
-      try {
-        const storedData = await AsyncStorage.getItem(SPLIT_STORAGE_KEY);
-        if (storedData) {
-          const parsed: SplitState = JSON.parse(storedData);
-          setReceiptName(parsed.receiptName ?? "untitled receipt");
-          setBuyers(parsed.buyers ?? []);
-          setTax(parsed.tax ?? 0);
-          setItems(parsed.items ?? []);
-          // crucially, we restore color toggles from cache
-          if (parsed.settings) {
-            setDarkMode(parsed.settings.darkMode ?? false);
-            setOffWhiteMode(parsed.settings.offWhiteMode ?? false);
-            setYuckMode(parsed.settings.yuckMode ?? false);
-            setRandomMode(parsed.settings.randomMode ?? false);
-            setSplitTaxEvenly(parsed.settings.splitTaxEvenly ?? true);
-          }
+            if (storedData) {
+                initialSplitState = JSON.parse(storedData); // Load from cache if available
+            }
+
+            // Apply cached state *before* processing imported receipt
+            setReceiptName(initialSplitState.receiptName ?? "untitled receipt");
+            setBuyers(initialSplitState.buyers ?? []);
+            setTax(initialSplitState.tax ?? 0);
+            setItems(initialSplitState.items ?? []);
+            if (initialSplitState.settings) { // Restore theme settings from cache
+                setDarkMode(initialSplitState.settings.darkMode ?? false);
+                setOffWhiteMode(initialSplitState.settings.offWhiteMode ?? false);
+                setYuckMode(initialSplitState.settings.yuckMode ?? false);
+                setRandomMode(initialSplitState.settings.randomMode ?? false);
+                setSplitTaxEvenly(initialSplitState.settings.splitTaxEvenly ?? true);
+            }
+
+
+            if (importedReceipt) { // *After* loading cache, process imported receipt
+                const safeItems = (importedReceipt.items ?? []).map((it: ItemType) => {
+                    let safeQuantity = it.quantity;
+                    if (
+                        typeof safeQuantity !== "number" ||
+                        isNaN(safeQuantity) ||
+                        safeQuantity < 1
+                    ) {
+                        safeQuantity = 1;
+                    }
+                    return { ...it, quantity: safeQuantity };
+                });
+                setReceiptName(importedReceipt.name || "untitled receipt"); // Imported receipt name overrides cache
+                setBuyers(importedReceipt.buyers || []); // Imported receipt buyers override cache
+                setItems(safeItems); // Imported receipt items override cache
+                setTax(importedReceipt.tax || 0); // Imported receipt tax overrides cache
+                importedReceiptUsed.current = true;
+                navigation.setParams({ importedReceipt: undefined }); // Clear param after use
+            }
+
+
+        } catch (error) {
+            console.log("Error during initialization:", error);
+        } finally {
+            setIsInitialized(true); // Initialize only after all loading and processing
         }
-      } catch (error) {
-        console.log("failed to load cached data:", error);
-      } finally {
-        setIsInitialized(true);
-      }
     };
-    loadCachedData();
-  }, []);
+
+    initializeSplit(); // Call the initialization function
+}, []); // Run only once on component mount
 
   // ----------------------------
   // Save on blur
