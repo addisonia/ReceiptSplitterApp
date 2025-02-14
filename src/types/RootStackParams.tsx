@@ -4,7 +4,7 @@ import type { ReceiptData } from "../screens/Split";
 
 export type RootStackParamList = {
   Home: undefined;
-  MainTabs: undefined;
+  MainTabs: { screen: "Home" | "Split" | "Chat" } | undefined;
   Split: {
     importedReceipt?: ReceiptData;
   };

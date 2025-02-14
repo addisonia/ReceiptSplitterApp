@@ -1,4 +1,3 @@
-// Chat.tsx
 // screens/Chat.tsx
 import React, { useState, useEffect } from "react";
 import {
@@ -8,11 +7,12 @@ import {
   FlatList,
   TextInput,
   Pressable,
-} from "react-native"; // Import TextInput and Pressable
+} from "react-native";
 import { adjectives, nouns } from "../components/wordLists";
 import { auth, database } from "../firebase";
 import { User } from "firebase/auth";
-import { ref, onValue, push, set } from "firebase/database"; // Import push and set
+import { ref, onValue, push, set } from "firebase/database";
+import colors from "../../constants/colors";
 
 interface Message {
   key: string;
@@ -25,7 +25,7 @@ const Chat = () => {
   const [username, setUsername] = useState<string | null>(null);
   const [user, setUser] = useState<User | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
-  const [newMessageText, setNewMessageText] = useState(""); // State for input text
+  const [newMessageText, setNewMessageText] = useState("");
 
   useEffect(() => {
     const unsubscribeAuth = auth.onAuthStateChanged((currentUser) => {
@@ -51,13 +51,30 @@ const Chat = () => {
       const data = snapshot.val();
       console.log("Data from Firebase:", data);
       if (data) {
-        const messagesArray: Message[] = Object.keys(data).map((key) => ({
-          key,
-          ...(data[key] as Omit<Message, "key">),
-        }));
-        messagesArray.sort((a, b) => a.timestamp - b.timestamp); // Sort EARLIEST to LATEST
-        console.log("Messages Array:", messagesArray); // **CHECK THIS LOG**
-        setMessages(messagesArray);
+        const messagesArray = Object.keys(data).map((key) => {
+          const messageData = data[key];
+          if (
+            messageData &&
+            typeof messageData === "object" &&
+            typeof messageData.text === "string" &&
+            typeof messageData.senderName === "string"
+          ) {
+            return {
+              key,
+              ...messageData,
+            };
+          } else {
+            console.warn("Invalid message data encountered:", messageData);
+            return null;
+          }
+        });
+
+        const validMessagesArray = messagesArray.filter(
+          (message) => message !== null
+        ) as Message[];
+
+        validMessagesArray.sort((a, b) => a.timestamp - b.timestamp);
+        setMessages(validMessagesArray);
       } else {
         console.log("No data received from Firebase");
         setMessages([]);
@@ -68,19 +85,18 @@ const Chat = () => {
   const handleSendMessage = () => {
     if (newMessageText && username) {
       const messagesRef = ref(database, "chat/messages");
-      const newMessageRef = push(messagesRef); // Generate unique key
+      const newMessageRef = push(messagesRef);
 
       set(newMessageRef, {
-        // Use set to write data at the new location
         text: newMessageText,
         senderName: username,
         timestamp: Date.now(),
       })
         .then(() => {
-          setNewMessageText(""); // Clear input after sending
+          setNewMessageText("");
         })
         .catch((error) => {
-          console.error("Error sending message:", error); // Handle errors
+          console.error("Error sending message:", error);
         });
     }
   };
@@ -90,33 +106,74 @@ const Chat = () => {
       <Text style={styles.header}>Global Chat</Text>
       <FlatList
         data={messages}
-        renderItem={({ item }) => (
-          <View style={styles.messageBubble}>
-            <Text style={styles.senderName}>{item.senderName}:</Text>
-            <Text style={styles.messageText}>{item.text}</Text>
-          </View>
-        )}
+        renderItem={({ item }) => {
+          if (
+            !item ||
+            typeof item !== "object" ||
+            !item.senderName ||
+            !item.text
+          ) {
+            console.warn("Skipping render of invalid message item:", item);
+            return null;
+          }
+          const isCurrentUserMessage = item.senderName === username;
+          return (
+            <View
+              style={[
+                styles.messageBubble,
+                isCurrentUserMessage
+                  ? styles.currentUserMessage
+                  : styles.otherUserMessage,
+              ]}
+            >
+              <Text
+                style={[
+                  styles.senderName,
+                  isCurrentUserMessage
+                    ? styles.currentUserSenderName
+                    : styles.otherUserSenderName,
+                ]}
+              >
+                {item.senderName}:
+              </Text>
+              <Text
+                style={[
+                  styles.messageText,
+                  isCurrentUserMessage
+                    ? styles.currentUserText
+                    : styles.otherUserText,
+                ]}
+              >
+                {item.text}
+              </Text>
+            </View>
+          );
+        }}
         keyExtractor={(item) => item.key}
-        contentContainerStyle={styles.messagesContainer} // Style for FlatList content
-        inverted={true} // Display newest messages at the bottom (optional, but common in chats)
+        contentContainerStyle={styles.messagesContainer}
+        inverted={true}
       />
-
       <View style={styles.inputArea}>
         <TextInput
           style={styles.input}
           placeholder="Type a message..."
           value={newMessageText}
           onChangeText={setNewMessageText}
-          onSubmitEditing={handleSendMessage} // Send message on pressing "Enter" (optional)
-          returnKeyType="send" // Change "Enter" key to "Send" (optional)
+          onSubmitEditing={handleSendMessage}
+          returnKeyType="send"
         />
         <Pressable style={styles.sendButton} onPress={handleSendMessage}>
           <Text style={styles.sendButtonText}>Send</Text>
         </Pressable>
       </View>
-
       <Text style={styles.usernameDisplay}>Username: {username}</Text>
-      {user ? <Text>Signed in</Text> : <Text>Not signed in</Text>}
+      {user ? (
+        <Text style={{ color: "white", textAlign: "center" }}>Signed in</Text>
+      ) : (
+        <Text style={{ color: "white", textAlign: "center" }}>
+          Not signed in
+        </Text>
+      )}
     </View>
   );
 };
@@ -124,23 +181,23 @@ const Chat = () => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: "#f0f0f0",
+    backgroundColor: colors.yuck,
   },
   header: {
     fontSize: 24,
     fontWeight: "bold",
     marginBottom: 20,
     textAlign: "center",
-    marginTop: 40, // Add some top margin to header
+    marginTop: 40,
+    color: "white",
   },
   messagesContainer: {
-    paddingVertical: 15, // Add padding at the top and bottom of the message list
+    paddingVertical: 15,
     paddingHorizontal: 10,
-    flexDirection: "column-reverse", // New messages at bottom when inverted is true
+    flexDirection: "column-reverse",
   },
   messageBubble: {
     padding: 10,
-    backgroundColor: "white",
     borderRadius: 10,
     marginBottom: 8,
     elevation: 2,
@@ -148,23 +205,42 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 1 },
     shadowOpacity: 0.18,
     shadowRadius: 1.0,
-    alignSelf: "flex-start", // Default align to left
-    maxWidth: "80%", // Prevent message bubbles from taking full width
+    maxWidth: "80%",
+  },
+  currentUserMessage: {
+    backgroundColor: colors.yellow, // Yellow for current user messages
+    alignSelf: "flex-end", // Align to the right
+  },
+  otherUserMessage: {
+    backgroundColor: "#0C3A50", // Darker blue for other messages
+    alignSelf: "flex-start", // Align to the left
   },
   senderName: {
     fontWeight: "bold",
     marginBottom: 3,
-    color: "#333",
+    color: colors.yellow, // Yellow for sender names generally
+  },
+  currentUserSenderName: {
+    color: "black", // Black sender name for current user for contrast
+  },
+  otherUserSenderName: {
+    color: colors.yellow, // Yellow sender name for other users
   },
   messageText: {
     fontSize: 16,
-    color: "#555",
+    color: "white", // White message text for all messages
+  },
+  currentUserText: {
+    color: "black", // Black message text for current user for contrast
+  },
+  otherUserText: {
+    color: "white", // White message text for other users
   },
   inputArea: {
     flexDirection: "row",
     padding: 10,
     borderTopWidth: 1,
-    borderTopColor: "#ccc",
+    borderTopColor: colors.yellow,
     alignItems: "center",
   },
   input: {
@@ -172,29 +248,29 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
     paddingHorizontal: 12,
     borderRadius: 20,
-    backgroundColor: "white",
+    backgroundColor: "#114B68",
     marginRight: 8,
-    borderColor: "#ddd",
+    borderColor: colors.yellow,
     borderWidth: 1,
+    color: "white",
   },
   sendButton: {
     paddingVertical: 10,
     paddingHorizontal: 16,
-    backgroundColor: "#4a7bff", // Example send button color
+    backgroundColor: colors.yellow,
     borderRadius: 20,
   },
   sendButtonText: {
-    color: "white",
+    color: "black",
     fontWeight: "bold",
     fontSize: 16,
   },
   usernameDisplay: {
-    // Added style for username display
     textAlign: "center",
     marginTop: 10,
     marginBottom: 5,
     fontSize: 12,
-    color: "grey",
+    color: colors.yellow,
   },
 });
 
