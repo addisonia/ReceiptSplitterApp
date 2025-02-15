@@ -22,6 +22,7 @@ const Stack = createNativeStackNavigator();
 const MainTabs = () => {
   return (
     <Tab.Navigator
+      initialRouteName="Home"
       screenOptions={{
         swipeEnabled: true,
         tabBarStyle: { display: "none" },
