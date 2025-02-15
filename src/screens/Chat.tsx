@@ -59,23 +59,20 @@ const Chat = () => {
 
   const fetchChatUsernameFromDB = (uid: string) => {
     const usernameRef = ref(database, `users/${uid}/username`);
-    onValue(
-      usernameRef,
-      (snapshot) => {
-        const dbUsername = snapshot.val();
-        if (dbUsername) {
-          setUsername(dbUsername);
-        } else {
-          const newUsername = generateRandomUsernameForChat();
-          setUsername(newUsername);
-          set(usernameRef, newUsername).catch((error) => {
-            console.error("error writing username to db:", error);
-          });
-        }
-      },
-      { onlyOnce: true }
-    );
+    onValue(usernameRef, (snapshot) => {
+      const dbUsername = snapshot.val();
+      if (dbUsername) {
+        setUsername(dbUsername);
+      } else {
+        const newUsername = generateRandomUsernameForChat();
+        setUsername(newUsername);
+        set(usernameRef, newUsername).catch((error) => {
+          console.error("error writing username to db:", error);
+        });
+      }
+    });
   };
+  
 
   const generateRandomUsernameForChat = () => {
     const randomAdjective =
