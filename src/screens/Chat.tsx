@@ -84,49 +84,39 @@ const Chat = () => {
   };
 
   useEffect(() => {
-    if (!isSignedIn) return;
+    console.log("Setting up chat listener, isSignedIn:", isSignedIn);
+    if (!isSignedIn || !username) return; // Ensure username is also available
 
-    const messagesRef = ref(database, "chat/messages");
+    const messagesRef = ref(database, `chat/messages/${username}`); // <-- Use username state here
     const unsubscribe = onValue(messagesRef, (snapshot) => {
       const data = snapshot.val();
+      console.log("Raw snapshot data:", data);
       const messagesArray: Message[] = [];
 
       if (data) {
-        Object.entries(data).forEach(([senderName, senderMessages]) => {
-          // Iterate through senders
-          if (typeof senderMessages !== "object" || senderMessages === null)
-            return;
-
-          Object.entries(senderMessages).forEach(
-            ([messageKey, messageData]) => {
-              // Iterate through messages
-              if (messageData && typeof messageData === "object") {
-                const message = messageData as MessageDataInFirebase; // Type assertion here
-                messagesArray.push({
-                  key: messageKey,
-                  senderName: message.senderName,
-                  text: message.text,
-                  timestamp: message.timestamp,
-                  senderUid: message.senderUid,
-                });
-              }
-            }
-          );
+        Object.entries(data).forEach(([msgId, msgData]) => {
+          console.log("Message:", msgId, msgData);
+          if (msgData && typeof msgData === "object") {
+            messagesArray.push({
+              key: msgId,
+              senderName: msgData.senderName,
+              text: msgData.text,
+              timestamp: msgData.timestamp,
+              senderUid: msgData.senderUid,
+            });
+          }
         });
-
         messagesArray.sort((a, b) => a.timestamp - b.timestamp);
+        console.log("Final messages array:", messagesArray);
         setMessages(messagesArray);
-        console.log("Chat Messages State Updated:", messagesArray);
       } else {
         setMessages([]);
-        console.log(
-          "Chat Messages State Updated: No data received from Firebase"
-        );
+        console.log(`No data found in chat/messages/${username}`); // <-- Updated log message
       }
     });
 
     return () => unsubscribe();
-  }, [isSignedIn]);
+  }, [isSignedIn, username]); // <-- Added username to dependency array
 
   const handleSendMessage = () => {
     if (!isSignedIn) {

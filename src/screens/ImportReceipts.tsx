@@ -114,30 +114,31 @@ export default function ImportReceipts() {
   const [receipts, setReceipts] = useState<ReceiptData[]>([]);
   const [backIconColor, setBackIconColor] = useState(colors.yellow);
 
-  useEffect(() => {
-    if (!auth.currentUser) return;
-    const userId = auth.currentUser.uid;
-    const receiptsRef = ref(database, `receipts/${userId}`);
+// importreceipts.tsx - Update the useEffect
+useEffect(() => {
+  if (!auth.currentUser) return;
+  const userId = auth.currentUser.uid;
+  const receiptsRef = ref(database, `receipts/${userId}`);
 
-    const unsubscribe = onValue(receiptsRef, (snapshot) => {
-      if (!snapshot.exists()) {
-        setReceipts([]);
-        return;
-      }
-      const data = snapshot.val() || {};
-      const loaded = Object.keys(data).map((key) =>
-        normalizeReceiptData(key, data[key])
-      );
-      loaded.sort(
-        (a, b) =>
-          new Date(b.time_and_date).getTime() -
-          new Date(a.time_and_date).getTime()
-      );
-      setReceipts(loaded);
-    });
+  const unsubscribe = onValue(receiptsRef, (snapshot) => {
+    if (!snapshot.exists()) {
+      setReceipts([]);
+      return;
+    }
+    const data = snapshot.val() || {};
+    const loaded = Object.keys(data).map((key) =>
+      normalizeReceiptData(key, data[key])
+    );
+    loaded.sort(
+      (a, b) =>
+        new Date(b.time_and_date).getTime() -
+        new Date(a.time_and_date).getTime()
+    );
+    setReceipts(loaded);
+  });
 
-    return () => unsubscribe();
-  }, []);
+  return () => unsubscribe();
+}, []);
 
   function handleSelectReceipt(receipt: ReceiptData) {
     navigation.navigate("MainTabs", {

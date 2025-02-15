@@ -36,36 +36,38 @@ const Receipts = () => {
 
   const user = auth.currentUser;
 
-  // fetch receipts on mount if user is valid
-  useEffect(() => {
-    let isMounted = true;
-    const fetchReceipts = async () => {
-      if (!user) {
-        setLoading(false);
-        return;
-      }
-      try {
-        const db = getDatabase();
-        const userReceiptsRef = ref(db, `receipts/${user.uid}`);
-        const snapshot = await get(userReceiptsRef);
-        if (!isMounted) return;
-        if (snapshot.exists()) {
-          setReceipts(snapshot.val());
-        } else {
-          setReceipts(null);
-        }
-      } catch (error) {
-        console.error("error fetching receipts:", error);
-      } finally {
-        if (isMounted) setLoading(false);
-      }
-    };
+// receipts.tsx - Update the useEffect fetch logic
+useEffect(() => {
+  let isMounted = true;
+  const fetchReceipts = async () => {
+    if (!user) {
+      setLoading(false);
+      return;
+    }
+    try {
+      const db = getDatabase();
+      // CORRECT PATH: Access receipts/USER_UID directly
+      const userReceiptsRef = ref(db, `receipts/${user.uid}`);
+      const snapshot = await get(userReceiptsRef);
 
-    fetchReceipts();
-    return () => {
-      isMounted = false;
-    };
-  }, [user]);
+      if (!isMounted) return;
+      if (snapshot.exists()) {
+        setReceipts(snapshot.val());
+      } else {
+        setReceipts(null);
+      }
+    } catch (error) {
+      console.error("Error fetching receipts:", error);
+    } finally {
+      if (isMounted) setLoading(false);
+    }
+  };
+
+  fetchReceipts();
+  return () => {
+    isMounted = false;
+  };
+}, [user]);
 
   // navigate home
   const goHome = () => {
