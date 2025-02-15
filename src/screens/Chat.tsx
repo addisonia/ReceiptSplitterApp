@@ -13,6 +13,7 @@ import { auth, database } from "../firebase";
 import { User } from "firebase/auth";
 import { ref, onValue, push, set } from "firebase/database";
 import colors from "../../constants/colors";
+import ChatSkeleton from "../components/ChatSkeleton";
 
 interface Message {
   key: string;
@@ -85,14 +86,14 @@ const Chat = () => {
 
   useEffect(() => {
     if (!isSignedIn) return;
-  
+
     // Listen to the entire messages node
     const messagesRef = ref(database, "chat/messages");
     const unsubscribe = onValue(messagesRef, (snapshot) => {
       const data = snapshot.val();
       console.log("Raw snapshot data:", data);
       const messagesArray: Message[] = [];
-  
+
       if (data) {
         // data is an object with keys as usernames
         Object.entries(data).forEach(([userKey, userMessages]) => {
@@ -122,10 +123,9 @@ const Chat = () => {
         console.log("No data found in chat/messages");
       }
     });
-  
+
     return () => unsubscribe();
   }, [isSignedIn]);
-  
 
   const handleSendMessage = () => {
     if (!isSignedIn) {
@@ -183,11 +183,7 @@ const Chat = () => {
     )
   );
 
-  const renderSignInMessage = () => (
-    <View style={styles.signInContainer}>
-      <Text style={styles.signInText}>Sign In To Access Chatrooms</Text>
-    </View>
-  );
+  const renderSignInMessage = () => <ChatSkeleton />;
 
   return (
     <View style={styles.container}>
