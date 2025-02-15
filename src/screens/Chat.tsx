@@ -1,5 +1,5 @@
 // screens/Chat.tsx
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import {
   View,
   Text,
@@ -19,6 +19,20 @@ interface Message {
   senderName: string;
   text: string;
   timestamp: number;
+  senderUid?: string;
+}
+
+interface MessageDataInFirebase {
+  // Define a new interface for the data structure from Firebase
+  senderName: string;
+  text: string;
+  timestamp: number;
+  senderUid?: string;
+}
+
+interface MessageItemProps {
+  item: Message;
+  isCurrentUserMessage: boolean;
 }
 
 const Chat = () => {
@@ -26,153 +40,196 @@ const Chat = () => {
   const [user, setUser] = useState<User | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
   const [newMessageText, setNewMessageText] = useState("");
+  const [isSignedIn, setIsSignedIn] = useState(false);
 
   useEffect(() => {
-    const unsubscribeAuth = auth.onAuthStateChanged((currentUser) => {
+    const unsubscribeAuth = auth.onAuthStateChanged(async (currentUser) => {
       setUser(currentUser);
+      if (currentUser) {
+        setIsSignedIn(true);
+        fetchChatUsernameFromDB(currentUser.uid);
+      } else {
+        setIsSignedIn(false);
+        setUsername(generateRandomUsernameForChat());
+      }
     });
     return () => unsubscribeAuth();
   }, []);
 
-  useEffect(() => {
-    if (user) {
-      setUsername(user.email || "Signed In User");
-    } else {
-      const randomAdjective =
-        adjectives[Math.floor(Math.random() * adjectives.length)];
-      const randomNoun = nouns[Math.floor(Math.random() * nouns.length)];
-      setUsername(`${randomAdjective} ${randomNoun}`);
-    }
-  }, [user]);
+  const fetchChatUsernameFromDB = (uid: string) => {
+    const usernameRef = ref(database, `users/${uid}/username`);
+    onValue(
+      usernameRef,
+      (snapshot) => {
+        const dbUsername = snapshot.val();
+        if (dbUsername) {
+          setUsername(dbUsername);
+        } else {
+          const newUsername = generateRandomUsernameForChat();
+          setUsername(newUsername);
+          set(usernameRef, newUsername).catch((error) => {
+            console.error("error writing username to db:", error);
+          });
+        }
+      },
+      { onlyOnce: true }
+    );
+  };
+
+  const generateRandomUsernameForChat = () => {
+    const randomAdjective =
+      adjectives[Math.floor(Math.random() * adjectives.length)];
+    const randomNoun = nouns[Math.floor(Math.random() * nouns.length)];
+    return `${randomAdjective} ${randomNoun}`;
+  };
 
   useEffect(() => {
+    if (!isSignedIn) return;
+
     const messagesRef = ref(database, "chat/messages");
-    onValue(messagesRef, (snapshot) => {
+    const unsubscribe = onValue(messagesRef, (snapshot) => {
       const data = snapshot.val();
-      console.log("Data from Firebase:", data);
+      const messagesArray: Message[] = [];
+
       if (data) {
-        const messagesArray = Object.keys(data).map((key) => {
-          const messageData = data[key];
-          if (
-            messageData &&
-            typeof messageData === "object" &&
-            typeof messageData.text === "string" &&
-            typeof messageData.senderName === "string"
-          ) {
-            return {
-              key,
-              ...messageData,
-            };
-          } else {
-            console.warn("Invalid message data encountered:", messageData);
-            return null;
-          }
+        Object.entries(data).forEach(([senderName, senderMessages]) => {
+          // Iterate through senders
+          if (typeof senderMessages !== "object" || senderMessages === null)
+            return;
+
+          Object.entries(senderMessages).forEach(
+            ([messageKey, messageData]) => {
+              // Iterate through messages
+              if (messageData && typeof messageData === "object") {
+                const message = messageData as MessageDataInFirebase; // Type assertion here
+                messagesArray.push({
+                  key: messageKey,
+                  senderName: message.senderName,
+                  text: message.text,
+                  timestamp: message.timestamp,
+                  senderUid: message.senderUid,
+                });
+              }
+            }
+          );
         });
 
-        const validMessagesArray = messagesArray.filter(
-          (message) => message !== null
-        ) as Message[];
-
-        validMessagesArray.sort((a, b) => a.timestamp - b.timestamp);
-        setMessages(validMessagesArray);
+        messagesArray.sort((a, b) => a.timestamp - b.timestamp);
+        setMessages(messagesArray);
+        console.log("Chat Messages State Updated:", messagesArray);
       } else {
-        console.log("No data received from Firebase");
         setMessages([]);
+        console.log(
+          "Chat Messages State Updated: No data received from Firebase"
+        );
       }
     });
-  }, []);
+
+    return () => unsubscribe();
+  }, [isSignedIn]);
 
   const handleSendMessage = () => {
+    if (!isSignedIn) {
+      alert("Sign in to send messages.");
+      return;
+    }
     if (newMessageText && username) {
-      const messagesRef = ref(database, "chat/messages");
+      const messagesRef = ref(database, `chat/messages/${username}`);
       const newMessageRef = push(messagesRef);
 
-      set(newMessageRef, {
+      const messagePayload = {
         text: newMessageText,
         senderName: username,
         timestamp: Date.now(),
-      })
-        .then(() => {
-          setNewMessageText("");
-        })
-        .catch((error) => {
-          console.error("Error sending message:", error);
-        });
+        senderUid: user?.uid || "unknown-uid",
+      };
+
+      set(newMessageRef, messagePayload)
+        .then(() => setNewMessageText(""))
+        .catch((error) => console.error("error sending message:", error));
     }
   };
+
+  const MessageItem: React.FC<MessageItemProps> = React.memo(
+    ({ item, isCurrentUserMessage }) => (
+      <View
+        style={[
+          styles.messageBubble,
+          isCurrentUserMessage
+            ? styles.currentUserMessage
+            : styles.otherUserMessage,
+        ]}
+      >
+        <Text
+          style={[
+            styles.senderName,
+            isCurrentUserMessage
+              ? styles.currentUserSenderName
+              : styles.otherUserSenderName,
+          ]}
+        >
+          {item.senderName}:
+        </Text>
+        <Text
+          style={[
+            styles.messageText,
+            isCurrentUserMessage
+              ? styles.currentUserText
+              : styles.otherUserText,
+          ]}
+        >
+          {item.text}
+        </Text>
+      </View>
+    )
+  );
+
+  const renderSignInMessage = () => (
+    <View style={styles.signInContainer}>
+      <Text style={styles.signInText}>Sign In To Access Chatrooms</Text>
+    </View>
+  );
 
   return (
     <View style={styles.container}>
       <Text style={styles.header}>Global Chat</Text>
-      <FlatList
-        data={messages}
-        renderItem={({ item }) => {
-          if (
-            !item ||
-            typeof item !== "object" ||
-            !item.senderName ||
-            !item.text
-          ) {
-            console.warn("Skipping render of invalid message item:", item);
-            return null;
-          }
-          const isCurrentUserMessage = item.senderName === username;
-          return (
-            <View
-              style={[
-                styles.messageBubble,
-                isCurrentUserMessage
-                  ? styles.currentUserMessage
-                  : styles.otherUserMessage,
-              ]}
-            >
-              <Text
-                style={[
-                  styles.senderName,
-                  isCurrentUserMessage
-                    ? styles.currentUserSenderName
-                    : styles.otherUserSenderName,
-                ]}
-              >
-                {item.senderName}:
-              </Text>
-              <Text
-                style={[
-                  styles.messageText,
-                  isCurrentUserMessage
-                    ? styles.currentUserText
-                    : styles.otherUserText,
-                ]}
-              >
-                {item.text}
-              </Text>
-            </View>
-          );
-        }}
-        keyExtractor={(item) => item.key}
-        contentContainerStyle={styles.messagesContainer}
-        inverted={true}
-      />
-      <View style={styles.inputArea}>
-        <TextInput
-          style={styles.input}
-          placeholder="Type a message..."
-          value={newMessageText}
-          onChangeText={setNewMessageText}
-          onSubmitEditing={handleSendMessage}
-          returnKeyType="send"
-        />
-        <Pressable style={styles.sendButton} onPress={handleSendMessage}>
-          <Text style={styles.sendButtonText}>Send</Text>
-        </Pressable>
-      </View>
-      <Text style={styles.usernameDisplay}>Username: {username}</Text>
-      {user ? (
-        <Text style={{ color: "white", textAlign: "center" }}>Signed in</Text>
+      {isSignedIn ? (
+        <>
+          <FlatList
+            data={messages}
+            renderItem={({ item }) => {
+              const isCurrentUserMessage = user
+                ? item.senderUid === user.uid
+                : false;
+              return (
+                <MessageItem
+                  item={item}
+                  isCurrentUserMessage={isCurrentUserMessage}
+                />
+              );
+            }}
+            keyExtractor={(item) => item.key}
+            contentContainerStyle={styles.messagesContainer}
+            inverted
+            removeClippedSubviews
+            windowSize={5}
+          />
+          <View style={styles.inputArea}>
+            <TextInput
+              style={styles.input}
+              placeholder="Type a message..."
+              value={newMessageText}
+              onChangeText={setNewMessageText}
+              onSubmitEditing={handleSendMessage}
+              returnKeyType="send"
+            />
+            <Pressable style={styles.sendButton} onPress={handleSendMessage}>
+              <Text style={styles.sendButtonText}>Send</Text>
+            </Pressable>
+          </View>
+        </>
       ) : (
-        <Text style={{ color: "white", textAlign: "center" }}>
-          Not signed in
-        </Text>
+        renderSignInMessage()
       )}
     </View>
   );
@@ -186,7 +243,7 @@ const styles = StyleSheet.create({
   header: {
     fontSize: 24,
     fontWeight: "bold",
-    marginBottom: 20,
+    marginBottom: 40,
     textAlign: "center",
     marginTop: 40,
     color: "white",
@@ -200,41 +257,36 @@ const styles = StyleSheet.create({
     padding: 10,
     borderRadius: 10,
     marginBottom: 8,
-    elevation: 2,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.18,
-    shadowRadius: 1.0,
     maxWidth: "80%",
   },
   currentUserMessage: {
-    backgroundColor: colors.yellow, // Yellow for current user messages
-    alignSelf: "flex-end", // Align to the right
+    backgroundColor: colors.yellow,
+    alignSelf: "flex-end",
   },
   otherUserMessage: {
-    backgroundColor: "#0C3A50", // Darker blue for other messages
-    alignSelf: "flex-start", // Align to the left
+    backgroundColor: "#0C3A50",
+    alignSelf: "flex-start",
   },
   senderName: {
     fontWeight: "bold",
     marginBottom: 3,
-    color: colors.yellow, // Yellow for sender names generally
+    color: colors.yellow,
   },
   currentUserSenderName: {
-    color: "black", // Black sender name for current user for contrast
+    color: "black",
   },
   otherUserSenderName: {
-    color: colors.yellow, // Yellow sender name for other users
+    color: colors.yellow,
   },
   messageText: {
     fontSize: 16,
-    color: "white", // White message text for all messages
+    color: "white",
   },
   currentUserText: {
-    color: "black", // Black message text for current user for contrast
+    color: "black",
   },
   otherUserText: {
-    color: "white", // White message text for other users
+    color: "white",
   },
   inputArea: {
     flexDirection: "row",
@@ -265,12 +317,17 @@ const styles = StyleSheet.create({
     fontWeight: "bold",
     fontSize: 16,
   },
-  usernameDisplay: {
-    textAlign: "center",
-    marginTop: 10,
-    marginBottom: 5,
-    fontSize: 12,
-    color: colors.yellow,
+  signInContainer: {
+    // Make sure these styles are defined
+    flex: 1,
+    backgroundColor: colors.yuck,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  signInText: {
+    // Make sure these styles are defined
+    fontSize: 18,
+    color: "white",
   },
 });
 
