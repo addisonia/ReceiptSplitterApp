@@ -84,39 +84,48 @@ const Chat = () => {
   };
 
   useEffect(() => {
-    console.log("Setting up chat listener, isSignedIn:", isSignedIn);
-    if (!isSignedIn || !username) return; // Ensure username is also available
-
-    const messagesRef = ref(database, `chat/messages/${username}`); // <-- Use username state here
+    if (!isSignedIn) return;
+  
+    // Listen to the entire messages node
+    const messagesRef = ref(database, "chat/messages");
     const unsubscribe = onValue(messagesRef, (snapshot) => {
       const data = snapshot.val();
       console.log("Raw snapshot data:", data);
       const messagesArray: Message[] = [];
-
+  
       if (data) {
-        Object.entries(data).forEach(([msgId, msgData]) => {
-          console.log("Message:", msgId, msgData);
-          if (msgData && typeof msgData === "object") {
-            messagesArray.push({
-              key: msgId,
-              senderName: msgData.senderName,
-              text: msgData.text,
-              timestamp: msgData.timestamp,
-              senderUid: msgData.senderUid,
+        // data is an object with keys as usernames
+        Object.entries(data).forEach(([userKey, userMessages]) => {
+          if (userMessages && typeof userMessages === "object") {
+            // Loop through each message for that user
+            Object.entries(userMessages).forEach(([msgId, msgData]) => {
+              console.log("Message:", msgId, msgData);
+              // Ensure msgData is an object
+              if (msgData && typeof msgData === "object") {
+                messagesArray.push({
+                  key: msgId,
+                  senderName: msgData.senderName,
+                  text: msgData.text,
+                  timestamp: msgData.timestamp,
+                  senderUid: msgData.senderUid,
+                });
+              }
             });
           }
         });
+        // Sort messages by timestamp
         messagesArray.sort((a, b) => a.timestamp - b.timestamp);
         console.log("Final messages array:", messagesArray);
         setMessages(messagesArray);
       } else {
         setMessages([]);
-        console.log(`No data found in chat/messages/${username}`); // <-- Updated log message
+        console.log("No data found in chat/messages");
       }
     });
-
+  
     return () => unsubscribe();
-  }, [isSignedIn, username]); // <-- Added username to dependency array
+  }, [isSignedIn]);
+  
 
   const handleSendMessage = () => {
     if (!isSignedIn) {
