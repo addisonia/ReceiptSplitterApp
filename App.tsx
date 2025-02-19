@@ -14,6 +14,9 @@ import ImportReceipts from "./src/screens/ImportReceipts";
 import { onAuthStateChanged, User } from "firebase/auth";
 import { auth } from "./src/firebase";
 import Chat from "./src/screens/Chat";
+import Profile from "./src/screens/Profile";
+import GroupChat from "./src/screens/GroupChat";
+import DM from "./src/screens/DM";
 
 const Tab = createMaterialTopTabNavigator();
 const Stack = createNativeStackNavigator();
@@ -105,6 +108,10 @@ function App() {
             component={ImportReceipts}
             options={{ gestureEnabled: true }}
           />
+          <Stack.Screen name="Profile" component={Profile} />
+          <Stack.Screen name="GroupChat" component={GroupChat} />
+          <Stack.Screen name="DM" component={DM} />
+
         </Stack.Navigator>
       </NavigationContainer>
     </SafeAreaView>

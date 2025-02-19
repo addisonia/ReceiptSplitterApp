@@ -1,5 +1,5 @@
 // screens/Chat.tsx
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect } from "react";
 import {
   View,
   Text,
@@ -7,13 +7,16 @@ import {
   FlatList,
   TextInput,
   Pressable,
+  TouchableOpacity,
 } from "react-native";
+import { FontAwesome } from "@expo/vector-icons";
 import { adjectives, nouns } from "../components/wordLists";
 import { auth, database } from "../firebase";
 import { User } from "firebase/auth";
 import { ref, onValue, push, set } from "firebase/database";
 import colors from "../../constants/colors";
 import ChatSkeleton from "../components/ChatSkeleton";
+import { useNavigation } from "@react-navigation/native";
 
 interface Message {
   key: string;
@@ -23,25 +26,14 @@ interface Message {
   senderUid?: string;
 }
 
-interface MessageDataInFirebase {
-  // Define a new interface for the data structure from Firebase
-  senderName: string;
-  text: string;
-  timestamp: number;
-  senderUid?: string;
-}
-
-interface MessageItemProps {
-  item: Message;
-  isCurrentUserMessage: boolean;
-}
-
 const Chat = () => {
   const [username, setUsername] = useState<string | null>(null);
   const [user, setUser] = useState<User | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
   const [newMessageText, setNewMessageText] = useState("");
   const [isSignedIn, setIsSignedIn] = useState(false);
+
+  const navigation = useNavigation();
 
   useEffect(() => {
     const unsubscribeAuth = auth.onAuthStateChanged(async (currentUser) => {
@@ -67,12 +59,11 @@ const Chat = () => {
         const newUsername = generateRandomUsernameForChat();
         setUsername(newUsername);
         set(usernameRef, newUsername).catch((error) => {
-          console.error("error writing username to db:", error);
+          console.error("Error writing username:", error);
         });
       }
     });
   };
-  
 
   const generateRandomUsernameForChat = () => {
     const randomAdjective =
@@ -84,21 +75,15 @@ const Chat = () => {
   useEffect(() => {
     if (!isSignedIn) return;
 
-    // Listen to the entire messages node
     const messagesRef = ref(database, "chat/messages");
     const unsubscribe = onValue(messagesRef, (snapshot) => {
       const data = snapshot.val();
-      console.log("Raw snapshot data:", data);
       const messagesArray: Message[] = [];
 
       if (data) {
-        // data is an object with keys as usernames
-        Object.entries(data).forEach(([userKey, userMessages]) => {
+        Object.entries(data).forEach(([_, userMessages]) => {
           if (userMessages && typeof userMessages === "object") {
-            // Loop through each message for that user
             Object.entries(userMessages).forEach(([msgId, msgData]) => {
-              console.log("Message:", msgId, msgData);
-              // Ensure msgData is an object
               if (msgData && typeof msgData === "object") {
                 messagesArray.push({
                   key: msgId,
@@ -111,13 +96,10 @@ const Chat = () => {
             });
           }
         });
-        // Sort messages by timestamp
         messagesArray.sort((a, b) => a.timestamp - b.timestamp);
-        console.log("Final messages array:", messagesArray);
         setMessages(messagesArray);
       } else {
         setMessages([]);
-        console.log("No data found in chat/messages");
       }
     });
 
@@ -132,7 +114,6 @@ const Chat = () => {
     if (newMessageText && username) {
       const messagesRef = ref(database, `chat/messages/${username}`);
       const newMessageRef = push(messagesRef);
-
       const messagePayload = {
         text: newMessageText,
         senderName: username,
@@ -142,12 +123,15 @@ const Chat = () => {
 
       set(newMessageRef, messagePayload)
         .then(() => setNewMessageText(""))
-        .catch((error) => console.error("error sending message:", error));
+        .catch((error) => console.error("Error sending message:", error));
     }
   };
 
-  const MessageItem: React.FC<MessageItemProps> = React.memo(
-    ({ item, isCurrentUserMessage }) => (
+  const renderSignInMessage = () => <ChatSkeleton />;
+
+  const MessageItem = React.memo(({ item }: { item: Message }) => {
+    const isCurrentUserMessage = user ? item.senderUid === user.uid : false;
+    return (
       <View
         style={[
           styles.messageBubble,
@@ -177,29 +161,49 @@ const Chat = () => {
           {item.text}
         </Text>
       </View>
-    )
-  );
-
-  const renderSignInMessage = () => <ChatSkeleton />;
+    );
+  });
 
   return (
     <View style={styles.container}>
-      <Text style={styles.header}>Global Chat</Text>
+      {/* top bar with icons, but only if user is signed in */}
+      <View style={styles.headerContainer}>
+        {isSignedIn && (
+          <>
+            <TouchableOpacity
+              onPress={() => navigation.navigate("Profile" as never)}
+            >
+              <FontAwesome
+                name="users"
+                size={26}
+                color={colors.yellow}
+                style={styles.icon}
+              />
+            </TouchableOpacity>
+          </>
+        )}
+        <Text style={styles.headerText}>Global Chat</Text>
+        {isSignedIn && (
+          <>
+            <TouchableOpacity
+              onPress={() => navigation.navigate("GroupChat" as never)}
+            >
+              <FontAwesome
+                name="plus"
+                size={26}
+                color={colors.yellow}
+                style={styles.icon}
+              />
+            </TouchableOpacity>
+          </>
+        )}
+      </View>
+
       {isSignedIn ? (
         <>
           <FlatList
             data={messages}
-            renderItem={({ item }) => {
-              const isCurrentUserMessage = user
-                ? item.senderUid === user.uid
-                : false;
-              return (
-                <MessageItem
-                  item={item}
-                  isCurrentUserMessage={isCurrentUserMessage}
-                />
-              );
-            }}
+            renderItem={({ item }) => <MessageItem item={item} />}
             keyExtractor={(item) => item.key}
             contentContainerStyle={styles.messagesContainer}
             inverted
@@ -210,6 +214,7 @@ const Chat = () => {
             <TextInput
               style={styles.input}
               placeholder="Type a message..."
+              placeholderTextColor="#ccc"
               value={newMessageText}
               onChangeText={setNewMessageText}
               onSubmitEditing={handleSendMessage}
@@ -227,18 +232,34 @@ const Chat = () => {
   );
 };
 
+export default Chat;
+
 const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: colors.yuck,
   },
-  header: {
-    fontSize: 24,
-    fontWeight: "bold",
-    marginBottom: 40,
+  headerContainer: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: 10,
+    paddingVertical: 15,
+    backgroundColor: colors.yuck,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.3,
+    shadowRadius: 3,
+    elevation: 4,
+  },
+  headerText: {
+    flex: 1,
     textAlign: "center",
-    marginTop: 40,
     color: "white",
+    fontSize: 20,
+    fontWeight: "bold",
+  },
+  icon: {
+    marginHorizontal: 10,
   },
   messagesContainer: {
     paddingVertical: 15,
@@ -309,18 +330,4 @@ const styles = StyleSheet.create({
     fontWeight: "bold",
     fontSize: 16,
   },
-  signInContainer: {
-    // Make sure these styles are defined
-    flex: 1,
-    backgroundColor: colors.yuck,
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  signInText: {
-    // Make sure these styles are defined
-    fontSize: 18,
-    color: "white",
-  },
 });
-
-export default Chat;
