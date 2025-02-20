@@ -21,7 +21,6 @@ import GoogleSignInButton from "../components/GoogleSignInButton";
 import { auth, database } from "../firebase";
 import { User, signOut } from "firebase/auth";
 import PrivacyPolicy from "../components/PrivacyPolicy";
-import { adjectives, nouns } from "../components/wordLists";
 import { ref, get, update } from "firebase/database";
 import Receipts from "./Receipts";
 

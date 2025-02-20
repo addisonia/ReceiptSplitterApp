@@ -14,13 +14,12 @@ import {
   Alert,
 } from "react-native";
 import { FontAwesome } from "@expo/vector-icons";
-import { adjectives, nouns } from "../components/wordLists";
 import { auth, database } from "../firebase";
 import { User, onAuthStateChanged } from "firebase/auth";
 import { ref, onValue, push, set, remove } from "firebase/database";
 import colors from "../../constants/colors";
 import ChatSkeleton from "../components/ChatSkeleton";
-import { useNavigation, NavigationProp } from "@react-navigation/native";
+import { useNavigation } from "@react-navigation/native";
 import { RootStackParamList } from "../types/RootStackParams";
 import { NativeStackNavigationProp } from "@react-navigation/native-stack";
 
@@ -75,8 +74,7 @@ const Chat = () => {
         const friendsRef = ref(database, `users/${currentUser.uid}/friends`);
         onValue(friendsRef, (snap) => {
           const data = snap.val() || {};
-          // data => { friendUid: friendUsername }
-          setMyFriends(data);
+          setMyFriends(data); // data => { friendUid: friendUsername }
         });
 
         // watch outgoingRequests
@@ -89,21 +87,13 @@ const Chat = () => {
           }
         });
       } else {
-        // not signed in => ephemeral random
+        // not signed in => ephemeral "Guest"
         setIsSignedIn(false);
-        setUsername(generateRandomUsernameForChat());
+        setUsername("Guest");
       }
     });
     return () => unsubscribeAuth();
   }, []);
-
-  // only ephemeral random for guests
-  const generateRandomUsernameForChat = () => {
-    const randomAdjective =
-      adjectives[Math.floor(Math.random() * adjectives.length)];
-    const randomNoun = nouns[Math.floor(Math.random() * nouns.length)];
-    return `${randomAdjective} ${randomNoun}`;
-  };
 
   const fetchChatUsernameFromDB = (uid: string) => {
     const usernameRef = ref(database, `users/${uid}/username`);
@@ -112,8 +102,8 @@ const Chat = () => {
       if (dbUsername) {
         setUsername(dbUsername);
       } else {
-        // do NOT generate a new name for a logged-in user.
-        // just show "Loading..." until Home writes a name.
+        // do NOT create a new name here
+        // just show "Loading..." until Home writes a name
         setUsername("Loading...");
       }
     });
@@ -158,8 +148,7 @@ const Chat = () => {
       alert("Sign in to send messages.");
       return;
     }
-    // if username is "Loading...", we can block sending or allow ephemeral
-    // up to you. We'll block for clarity:
+    // if username is "Loading...", block sending
     if (!username || username === "Loading...") {
       alert("Waiting for username to finish loading. Try again soon.");
       return;
@@ -181,7 +170,6 @@ const Chat = () => {
     }
   };
 
-  // toggles whether we show the timestamp
   const handleBubblePress = (msgKey: string) => {
     setExpandedMessages((prev) => ({
       ...prev,
@@ -198,7 +186,6 @@ const Chat = () => {
   ) => {
     if (isCurrentUserMessage || !targetUid || !targetName) return;
 
-    // check if targetUid is in myFriends
     const friendUids = Object.keys(myFriends);
     setIsTargetFriend(friendUids.includes(targetUid));
 
@@ -213,14 +200,12 @@ const Chat = () => {
   // add friend
   const handleAddFriend = async () => {
     if (!popupTargetUid || !user) return;
-    // check outgoingRequests
     if (outgoingRequests.has(popupTargetUid)) {
       Alert.alert(`Waiting on response from ${popupTargetName}`);
       setPopupVisible(false);
       return;
     }
 
-    // get my username from DB
     const myUid = user.uid;
     const myNameRef = ref(database, `users/${myUid}/username`);
     let localName = "Unknown";
@@ -237,7 +222,6 @@ const Chat = () => {
       );
     });
 
-    // push friend request
     const frRef = ref(database, `friendRequests/${popupTargetUid}`);
     const newReqRef = push(frRef);
     await set(newReqRef, {
@@ -245,7 +229,6 @@ const Chat = () => {
       fromUsername: localName,
     });
 
-    // also set outgoingRequests
     await set(
       ref(database, `outgoingRequests/${myUid}/${popupTargetUid}`),
       true
@@ -255,7 +238,6 @@ const Chat = () => {
     Alert.alert("Friend request sent", `Sent to ${popupTargetName}.`);
   };
 
-  // remove friend
   const confirmRemoveFriend = () => {
     if (!popupTargetUid || !popupTargetName || !user) return;
     Alert.alert(
@@ -281,12 +263,9 @@ const Chat = () => {
     setPopupVisible(false);
 
     const myUid = user.uid;
-    // remove from my friend list
     await remove(ref(database, `users/${myUid}/friends/${friendUid}`));
-    // remove me from their friend list
     await remove(ref(database, `users/${friendUid}/friends/${myUid}`));
 
-    // remove any outgoingRequests references
     await remove(ref(database, `outgoingRequests/${myUid}/${friendUid}`));
     await remove(ref(database, `outgoingRequests/${friendUid}/${myUid}`));
   };
@@ -296,14 +275,12 @@ const Chat = () => {
     if (!popupTargetUid || !popupTargetName) return;
     setPopupVisible(false);
 
-    // direct navigation to DM
     navigation.navigate("DM", {
       friendUid: popupTargetUid,
       friendUsername: popupTargetName,
     });
   };
 
-  // rendering each message in FlatList
   const MessageItem = React.memo(({ item }: { item: Message }) => {
     const isCurrentUserMessage = user ? item.senderUid === user.uid : false;
     const isExpanded = expandedMessages[item.key] || false;
@@ -417,7 +394,7 @@ const Chat = () => {
         renderSignInMessage()
       )}
 
-      {/* custom popup bubble for friend ops */}
+      {/* custom popup bubble */}
       <Modal visible={popupVisible} transparent animationType="fade">
         <TouchableWithoutFeedback onPress={() => setPopupVisible(false)}>
           <View style={styles.modalOverlay} />
