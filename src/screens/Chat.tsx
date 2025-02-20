@@ -20,10 +20,11 @@ import { User, onAuthStateChanged } from "firebase/auth";
 import { ref, onValue, push, set, remove } from "firebase/database";
 import colors from "../../constants/colors";
 import ChatSkeleton from "../components/ChatSkeleton";
-import { useNavigation } from "@react-navigation/native";
-import { NativeStackNavigationProp } from "@react-navigation/native-stack";
+import { useNavigation, NavigationProp } from "@react-navigation/native";
 import { RootStackParamList } from "../types/RootStackParams";
+import { NativeStackNavigationProp } from "@react-navigation/native-stack";
 
+type ChatNavProp = NativeStackNavigationProp<RootStackParamList, "Chat">;
 
 interface Message {
   key: string;
@@ -33,20 +34,19 @@ interface Message {
   senderUid?: string;
 }
 
-type ChatNavigationProp = NativeStackNavigationProp<RootStackParamList, "Chat">;
-
-// track the friend list for the current user
-// so we can know if targetUid is a friend or not
-// then show "Add Friend" vs. "Remove Friend"
 const Chat = () => {
+  const navigation = useNavigation<ChatNavProp>();
+
   const [username, setUsername] = useState<string | null>(null);
   const [user, setUser] = useState<User | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
   const [newMessageText, setNewMessageText] = useState("");
   const [isSignedIn, setIsSignedIn] = useState(false);
 
-  // expanded messages for timestamps
-  const [expandedMessages, setExpandedMessages] = useState<Record<string, boolean>>({});
+  // track which messages are tapped to show timestamp
+  const [expandedMessages, setExpandedMessages] = useState<
+    Record<string, boolean>
+  >({});
 
   // popup state
   const [popupVisible, setPopupVisible] = useState(false);
@@ -56,32 +56,54 @@ const Chat = () => {
   const [popupTargetName, setPopupTargetName] = useState<string | null>(null);
   const [isTargetFriend, setIsTargetFriend] = useState(false);
 
-  const navigation = useNavigation<ChatNavigationProp>();
-
-  // store my friend list in memory
+  // local friend list
   const [myFriends, setMyFriends] = useState<Record<string, string>>({});
+  // store outgoing requests
+  const [outgoingRequests, setOutgoingRequests] = useState<Set<string>>(
+    new Set()
+  );
 
   useEffect(() => {
-    // watch auth
     const unsubscribeAuth = onAuthStateChanged(auth, (currentUser) => {
       setUser(currentUser);
       if (currentUser) {
         setIsSignedIn(true);
+        // read existing username from DB
         fetchChatUsernameFromDB(currentUser.uid);
-        // also fetch friend list
+
+        // watch friend list
         const friendsRef = ref(database, `users/${currentUser.uid}/friends`);
         onValue(friendsRef, (snap) => {
           const data = snap.val() || {};
-          // data is { friendUid: friendUsername }
+          // data => { friendUid: friendUsername }
           setMyFriends(data);
         });
+
+        // watch outgoingRequests
+        const outRef = ref(database, `outgoingRequests/${currentUser.uid}`);
+        onValue(outRef, (snap) => {
+          if (!snap.exists()) {
+            setOutgoingRequests(new Set());
+          } else {
+            setOutgoingRequests(new Set(Object.keys(snap.val())));
+          }
+        });
       } else {
+        // not signed in => ephemeral random
         setIsSignedIn(false);
         setUsername(generateRandomUsernameForChat());
       }
     });
     return () => unsubscribeAuth();
   }, []);
+
+  // only ephemeral random for guests
+  const generateRandomUsernameForChat = () => {
+    const randomAdjective =
+      adjectives[Math.floor(Math.random() * adjectives.length)];
+    const randomNoun = nouns[Math.floor(Math.random() * nouns.length)];
+    return `${randomAdjective} ${randomNoun}`;
+  };
 
   const fetchChatUsernameFromDB = (uid: string) => {
     const usernameRef = ref(database, `users/${uid}/username`);
@@ -90,24 +112,16 @@ const Chat = () => {
       if (dbUsername) {
         setUsername(dbUsername);
       } else {
-        const newUsername = generateRandomUsernameForChat();
-        setUsername(newUsername);
-        set(usernameRef, newUsername).catch((error) => {
-          console.error("Error writing username:", error);
-        });
+        // do NOT generate a new name for a logged-in user.
+        // just show "Loading..." until Home writes a name.
+        setUsername("Loading...");
       }
     });
   };
 
-  const generateRandomUsernameForChat = () => {
-    const randomAdjective = adjectives[Math.floor(Math.random() * adjectives.length)];
-    const randomNoun = nouns[Math.floor(Math.random() * nouns.length)];
-    return `${randomAdjective} ${randomNoun}`;
-  };
-
+  // load messages from "chat/messages"
   useEffect(() => {
     if (!isSignedIn) return;
-
     const messagesRef = ref(database, "chat/messages");
     const unsubscribe = onValue(messagesRef, (snapshot) => {
       const data = snapshot.val();
@@ -144,7 +158,14 @@ const Chat = () => {
       alert("Sign in to send messages.");
       return;
     }
-    if (newMessageText && username) {
+    // if username is "Loading...", we can block sending or allow ephemeral
+    // up to you. We'll block for clarity:
+    if (!username || username === "Loading...") {
+      alert("Waiting for username to finish loading. Try again soon.");
+      return;
+    }
+
+    if (newMessageText.trim()) {
       const messagesRef = ref(database, `chat/messages/${username}`);
       const newMessageRef = push(messagesRef);
       const messagePayload = {
@@ -160,6 +181,7 @@ const Chat = () => {
     }
   };
 
+  // toggles whether we show the timestamp
   const handleBubblePress = (msgKey: string) => {
     setExpandedMessages((prev) => ({
       ...prev,
@@ -167,7 +189,6 @@ const Chat = () => {
     }));
   };
 
-  // on long press, show popup near bubble
   const handleBubbleLongPress = (
     isCurrentUserMessage: boolean,
     targetUid: string | undefined,
@@ -178,7 +199,7 @@ const Chat = () => {
     if (isCurrentUserMessage || !targetUid || !targetName) return;
 
     // check if targetUid is in myFriends
-    const friendUids = Object.keys(myFriends); // array of my friend UIDs
+    const friendUids = Object.keys(myFriends);
     setIsTargetFriend(friendUids.includes(targetUid));
 
     setPopupTargetUid(targetUid);
@@ -189,10 +210,17 @@ const Chat = () => {
     setPopupVisible(true);
   };
 
-  // for add friend
+  // add friend
   const handleAddFriend = async () => {
     if (!popupTargetUid || !user) return;
-    // read your username
+    // check outgoingRequests
+    if (outgoingRequests.has(popupTargetUid)) {
+      Alert.alert(`Waiting on response from ${popupTargetName}`);
+      setPopupVisible(false);
+      return;
+    }
+
+    // get my username from DB
     const myUid = user.uid;
     const myNameRef = ref(database, `users/${myUid}/username`);
     let localName = "Unknown";
@@ -217,29 +245,38 @@ const Chat = () => {
       fromUsername: localName,
     });
 
+    // also set outgoingRequests
+    await set(
+      ref(database, `outgoingRequests/${myUid}/${popupTargetUid}`),
+      true
+    );
+
     setPopupVisible(false);
     Alert.alert("Friend request sent", `Sent to ${popupTargetName}.`);
   };
 
-  // confirm remove friend
+  // remove friend
   const confirmRemoveFriend = () => {
     if (!popupTargetUid || !popupTargetName || !user) return;
     Alert.alert(
       "Remove Friend",
       `Are you sure you want to remove ${popupTargetName} as your friend?`,
       [
-        { text: "Cancel", style: "cancel", onPress: () => setPopupVisible(false) },
+        {
+          text: "Cancel",
+          style: "cancel",
+          onPress: () => setPopupVisible(false),
+        },
         {
           text: "Remove",
           style: "destructive",
-          onPress: () => removeFriend(popupTargetUid),
+          onPress: () => doRemoveFriend(popupTargetUid),
         },
       ]
     );
   };
 
-  // remove friend from both sides
-  const removeFriend = async (friendUid: string) => {
+  const doRemoveFriend = async (friendUid: string) => {
     if (!user) return;
     setPopupVisible(false);
 
@@ -248,18 +285,25 @@ const Chat = () => {
     await remove(ref(database, `users/${myUid}/friends/${friendUid}`));
     // remove me from their friend list
     await remove(ref(database, `users/${friendUid}/friends/${myUid}`));
+
+    // remove any outgoingRequests references
+    await remove(ref(database, `outgoingRequests/${myUid}/${friendUid}`));
+    await remove(ref(database, `outgoingRequests/${friendUid}/${myUid}`));
   };
 
   // open DM
   const handleMessage = () => {
     if (!popupTargetUid || !popupTargetName) return;
     setPopupVisible(false);
+
+    // direct navigation to DM
     navigation.navigate("DM", {
       friendUid: popupTargetUid,
       friendUsername: popupTargetName,
     });
   };
 
+  // rendering each message in FlatList
   const MessageItem = React.memo(({ item }: { item: Message }) => {
     const isCurrentUserMessage = user ? item.senderUid === user.uid : false;
     const isExpanded = expandedMessages[item.key] || false;
@@ -270,17 +314,27 @@ const Chat = () => {
         onPress={() => handleBubblePress(item.key)}
         onLongPress={(e) => {
           const { pageX, pageY } = e.nativeEvent;
-          handleBubbleLongPress(isCurrentUserMessage, item.senderUid, item.senderName, pageX, pageY);
+          handleBubbleLongPress(
+            isCurrentUserMessage,
+            item.senderUid,
+            item.senderName,
+            pageX,
+            pageY
+          );
         }}
         style={[
           styles.messageBubble,
-          isCurrentUserMessage ? styles.currentUserMessage : styles.otherUserMessage,
+          isCurrentUserMessage
+            ? styles.currentUserMessage
+            : styles.otherUserMessage,
         ]}
       >
         <Text
           style={[
             styles.senderName,
-            isCurrentUserMessage ? styles.currentUserSenderName : styles.otherUserSenderName,
+            isCurrentUserMessage
+              ? styles.currentUserSenderName
+              : styles.otherUserSenderName,
           ]}
         >
           {item.senderName}:
@@ -288,13 +342,17 @@ const Chat = () => {
         <Text
           style={[
             styles.messageText,
-            isCurrentUserMessage ? styles.currentUserText : styles.otherUserText,
+            isCurrentUserMessage
+              ? styles.currentUserText
+              : styles.otherUserText,
           ]}
         >
           {item.text}
         </Text>
         {isExpanded && (
-          <Text style={styles.timestamp}>{new Date(item.timestamp).toLocaleString()}</Text>
+          <Text style={styles.timestamp}>
+            {new Date(item.timestamp).toLocaleString()}
+          </Text>
         )}
       </TouchableOpacity>
     );
@@ -304,22 +362,28 @@ const Chat = () => {
 
   return (
     <View style={styles.container}>
-      {/* Header */}
+      {/* Top bar */}
       <View style={styles.headerContainer}>
         {isSignedIn && (
-          <>
-            <TouchableOpacity onPress={() => navigation.navigate("Profile" as never)}>
-              <FontAwesome name="users" size={26} color={colors.yellow} style={styles.icon} />
-            </TouchableOpacity>
-          </>
+          <TouchableOpacity onPress={() => navigation.navigate("Profile")}>
+            <FontAwesome
+              name="users"
+              size={26}
+              color={colors.yellow}
+              style={styles.icon}
+            />
+          </TouchableOpacity>
         )}
         <Text style={styles.headerText}>Global Chat</Text>
         {isSignedIn && (
-          <>
-            <TouchableOpacity onPress={() => navigation.navigate("GroupChat" as never)}>
-              <FontAwesome name="plus" size={26} color={colors.yellow} style={styles.icon} />
-            </TouchableOpacity>
-          </>
+          <TouchableOpacity onPress={() => navigation.navigate("GroupChat")}>
+            <FontAwesome
+              name="plus"
+              size={26}
+              color={colors.yellow}
+              style={styles.icon}
+            />
+          </TouchableOpacity>
         )}
       </View>
 
@@ -353,7 +417,7 @@ const Chat = () => {
         renderSignInMessage()
       )}
 
-      {/* custom popup bubble */}
+      {/* custom popup bubble for friend ops */}
       <Modal visible={popupVisible} transparent animationType="fade">
         <TouchableWithoutFeedback onPress={() => setPopupVisible(false)}>
           <View style={styles.modalOverlay} />
@@ -369,13 +433,20 @@ const Chat = () => {
               },
             ]}
           >
-            {/* if isTargetFriend => show "Remove Friend" (red) else "Add Friend" */}
             {isTargetFriend ? (
-              <TouchableOpacity onPress={confirmRemoveFriend} style={styles.popupItem}>
-                <Text style={[styles.popupText, { color: "red" }]}>Remove Friend</Text>
+              <TouchableOpacity
+                onPress={confirmRemoveFriend}
+                style={styles.popupItem}
+              >
+                <Text style={[styles.popupText, { color: "red" }]}>
+                  Remove Friend
+                </Text>
               </TouchableOpacity>
             ) : (
-              <TouchableOpacity onPress={handleAddFriend} style={styles.popupItem}>
+              <TouchableOpacity
+                onPress={handleAddFriend}
+                style={styles.popupItem}
+              >
                 <Text style={styles.popupText}>Add Friend</Text>
               </TouchableOpacity>
             )}

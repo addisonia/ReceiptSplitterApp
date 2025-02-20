@@ -10,7 +10,7 @@ import {
   ScrollView,
   Alert,
 } from "react-native";
-import { ref, onValue, set, remove, push } from "firebase/database";
+import { ref, onValue, set, remove, push, get } from "firebase/database";
 import { auth, database } from "../firebase";
 import { FontAwesome5 } from "@expo/vector-icons";
 import colors from "../../constants/colors";
@@ -26,24 +26,51 @@ interface FriendRequest {
   key: string;
 }
 
+/*
+  Additional DB structure for no-duplicate-requests logic:
+  outgoingRequests/<myUid>/<theirUid> = true
+*/
+
 const Profile = ({ navigation }: any) => {
+  const currentUser = auth.currentUser;
+
   const [searchTerm, setSearchTerm] = useState("");
   const [allUsers, setAllUsers] = useState<DBUser[]>([]);
   const [filteredUsers, setFilteredUsers] = useState<DBUser[]>([]);
   const [friendRequests, setFriendRequests] = useState<FriendRequest[]>([]);
   const [friends, setFriends] = useState<DBUser[]>([]);
-  const [sentRequests, setSentRequests] = useState<string[]>([]);
+  const [sentRequests, setSentRequests] = useState<string[]>([]); // local memory
 
-  const currentUser = auth.currentUser;
+  // store all outgoing requests from DB
+  const [outgoingRequests, setOutgoingRequests] = useState<Set<string>>(
+    new Set()
+  );
 
-  // load all known usernames
+  useEffect(() => {
+    if (!currentUser) return;
+
+    // watch outgoingRequests/<myUid>
+    const outRef = ref(database, `outgoingRequests/${currentUser.uid}`);
+    const unsub = onValue(outRef, (snapshot) => {
+      if (!snapshot.exists()) {
+        setOutgoingRequests(new Set());
+      } else {
+        const data = snapshot.val();
+        // data is { theirUid: true, ... }
+        const uids = Object.keys(data);
+        setOutgoingRequests(new Set(uids));
+      }
+    });
+    return () => unsub();
+  }, [currentUser]);
+
+  // 1) load all known usernames
   useEffect(() => {
     const usernamesRef = ref(database, "usernames");
     const unsubscribe = onValue(usernamesRef, (snapshot) => {
       const data = snapshot.val();
       const userArray: DBUser[] = [];
       if (data) {
-        // data is { usernameStr: uidStr, ... }
         Object.entries(data).forEach(([username, uid]) => {
           if (typeof uid === "string") {
             userArray.push({ username, uid });
@@ -51,23 +78,22 @@ const Profile = ({ navigation }: any) => {
         });
       }
       setAllUsers(userArray);
-      setFilteredUsers(userArray);
     });
     return () => unsubscribe();
   }, []);
 
-  // listen for friend requests + friend list
+  // 2) listen for friend requests + friend list
   useEffect(() => {
     if (!currentUser) return;
 
     // friend requests to me
     const frRef = ref(database, `friendRequests/${currentUser.uid}`);
     const unsubscribeFR = onValue(frRef, (snapshot) => {
-      const data = snapshot.val();
-      if (!data) {
+      if (!snapshot.exists()) {
         setFriendRequests([]);
         return;
       }
+      const data = snapshot.val();
       const requests: FriendRequest[] = Object.entries(data).map(
         ([key, val]) => {
           const reqData = val as { fromUid: string; fromUsername: string };
@@ -84,12 +110,12 @@ const Profile = ({ navigation }: any) => {
     // my friends
     const friendsRef = ref(database, `users/${currentUser.uid}/friends`);
     const unsubscribeFriends = onValue(friendsRef, (snap) => {
-      const friendData = snap.val();
-      if (!friendData) {
+      if (!snap.exists()) {
         setFriends([]);
         return;
       }
-      // friendData is { friendUid: friendUsername, ... }
+      const friendData = snap.val();
+      // friendData => { friendUid: friendUsername, ... }
       const friendList: DBUser[] = Object.entries(friendData).map(
         ([fUid, fUsername]) => ({
           uid: fUid,
@@ -105,57 +131,52 @@ const Profile = ({ navigation }: any) => {
     };
   }, [currentUser]);
 
-  // Exclude current user + existing friends from the search results
+  // 3) unify the logic: whenever allUsers or user/friend data changes, we do an updated filter
+  useEffect(() => {
+    if (!currentUser) {
+      setFilteredUsers([]);
+      return;
+    }
+    handleSearch(searchTerm);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [allUsers, friends, outgoingRequests, currentUser]);
+
+  // filter out me, my friends, my outgoing requests
   const handleSearch = (term: string) => {
     setSearchTerm(term);
     if (!currentUser) {
       setFilteredUsers([]);
       return;
     }
+
     const lowerTerm = term.toLowerCase();
     const myUid = currentUser.uid;
-    // gather friend UIDs in a set
     const friendUids = new Set(friends.map((f) => f.uid));
 
     const results = allUsers.filter((user) => {
-      // exclude myself
-      if (user.uid === myUid) return false;
-      // exclude existing friends
-      if (friendUids.has(user.uid)) return false;
-      // match search
+      if (user.uid === myUid) return false; // exclude me
+      if (friendUids.has(user.uid)) return false; // exclude existing friend
+      if (outgoingRequests.has(user.uid)) return false; // exclude if I've sent request
       return user.username.toLowerCase().includes(lowerTerm);
     });
     setFilteredUsers(results);
   };
 
   // fetch my current username
-  const getCurrentUserUsername = (): Promise<string> => {
-    return new Promise((resolve) => {
-      if (!currentUser) {
-        resolve("");
-        return;
-      }
-      const userRef = ref(database, `users/${currentUser.uid}/username`);
-      onValue(
-        userRef,
-        (snap) => {
-          if (snap.exists()) {
-            resolve(snap.val());
-          } else {
-            resolve("");
-          }
-        },
-        { onlyOnce: true }
-      );
-    });
+  const getCurrentUserUsername = async (): Promise<string> => {
+    if (!currentUser) return "";
+    const snap = await get(ref(database, `users/${currentUser.uid}/username`));
+    if (snap.exists()) {
+      return snap.val();
+    }
+    return "";
   };
 
   // send friend request
   const sendFriendRequest = async (targetUser: DBUser) => {
     if (!currentUser) return;
     const currentUsername = await getCurrentUserUsername();
-
-    // friendRequests/<targetUid>/<randomKey> = { fromUid, fromUsername }
+    // friendRequests/<targetUid>
     const targetRef = ref(database, `friendRequests/${targetUser.uid}`);
     const newReqRef = push(targetRef);
 
@@ -164,19 +185,30 @@ const Profile = ({ navigation }: any) => {
       fromUsername: currentUsername,
     };
     await set(newReqRef, requestData);
+
+    // also mark outgoingRequests/<myUid>/<theirUid> = true
+    await set(
+      ref(database, `outgoingRequests/${currentUser.uid}/${targetUser.uid}`),
+      true
+    );
   };
 
   const isAlreadyFriend = (uid: string) => {
     return friends.some((f) => f.uid === uid);
   };
 
-  // "Add Friend" button
   const handleAddFriendPress = async (userObj: DBUser) => {
     if (!currentUser) return;
-    // skip if it's me or already friends
+
+    // skip if it's me or already friends or an outgoing request
     if (isAlreadyFriend(userObj.uid) || userObj.uid === currentUser.uid) {
       return;
     }
+    if (outgoingRequests.has(userObj.uid)) {
+      Alert.alert("Already waiting on request");
+      return;
+    }
+
     await sendFriendRequest(userObj);
     setSentRequests((prev) => [...prev, userObj.uid]);
   };
@@ -187,7 +219,7 @@ const Profile = ({ navigation }: any) => {
     const myUid = currentUser.uid;
     const myUsername = await getCurrentUserUsername();
 
-    // add each other to friends
+    // add to each other's friend list
     await set(
       ref(database, `users/${myUid}/friends/${req.fromUid}`),
       req.fromUsername
@@ -199,6 +231,9 @@ const Profile = ({ navigation }: any) => {
 
     // remove request
     await remove(ref(database, `friendRequests/${myUid}/${req.key}`));
+
+    // remove outgoingRequests if it existed
+    await remove(ref(database, `outgoingRequests/${req.fromUid}/${myUid}`));
   };
 
   // reject friend request
@@ -231,6 +266,10 @@ const Profile = ({ navigation }: any) => {
 
     await remove(ref(database, `users/${myUid}/friends/${friendUid}`));
     await remove(ref(database, `users/${friendUid}/friends/${myUid}`));
+
+    // also remove outgoingRequests
+    await remove(ref(database, `outgoingRequests/${myUid}/${friendUid}`));
+    await remove(ref(database, `outgoingRequests/${friendUid}/${myUid}`));
   };
 
   // open DM
@@ -241,12 +280,13 @@ const Profile = ({ navigation }: any) => {
     });
   };
 
-  // render each user in the "Add Friends" list
+  // render the user rows in the "Add Friends" section
   const renderSearchResult = ({ item }: { item: DBUser }) => {
     if (!currentUser) return null;
     const isMe = item.uid === currentUser.uid;
     const isFriend = isAlreadyFriend(item.uid);
     const hasSent = sentRequests.includes(item.uid);
+    const hasOutgoing = outgoingRequests.has(item.uid);
 
     return (
       <View style={styles.userRow}>
@@ -255,6 +295,8 @@ const Profile = ({ navigation }: any) => {
           <Text style={styles.statusText}>This is you</Text>
         ) : isFriend ? (
           <Text style={styles.statusText}>Friend</Text>
+        ) : hasOutgoing ? (
+          <Text style={styles.statusText}>Request Sent</Text>
         ) : hasSent ? (
           <Text style={styles.statusText}>Request Sent</Text>
         ) : (
@@ -271,22 +313,23 @@ const Profile = ({ navigation }: any) => {
 
   return (
     <View style={styles.container}>
-      {/* Header with yellow back arrow and "User Profile" centered */}
+      {/* header with a YELLOW back arrow and "User Profile" in center */}
       <View style={styles.headerContainer}>
         <TouchableOpacity onPress={() => navigation.goBack()}>
           <FontAwesome5
             name="arrow-left"
             size={24}
-            color={colors.yellow} // arrow is yellow
+            color={colors.yellow}
             style={{ marginRight: 10 }}
           />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>User Profile</Text>
-        {/* this empty View ensures the title is centered by pushing it away */}
         <View style={{ width: 24, marginLeft: 10 }} />
       </View>
 
+      {/* top 40%: add friends + search */}
       <View style={styles.topContainer}>
+        <Text style={styles.sectionTitle}>Add Friends</Text>
         <TextInput
           style={styles.searchInput}
           placeholder="Search by username..."
@@ -294,7 +337,6 @@ const Profile = ({ navigation }: any) => {
           value={searchTerm}
           onChangeText={handleSearch}
         />
-        <Text style={styles.sectionTitle}>Add Friends</Text>
         <View style={{ flex: 1 }}>
           <FlatList
             data={filteredUsers}
@@ -304,8 +346,9 @@ const Profile = ({ navigation }: any) => {
         </View>
       </View>
 
+      {/* middle 25%: friend requests */}
       <View style={styles.middleContainer}>
-        <Text style={styles.sectionTitle}>Friend Requests</Text>
+        <Text style={styles.sectionHeader}>Friend Requests</Text>
         <ScrollView>
           {friendRequests.length === 0 ? (
             <Text style={styles.noItems}>No friend requests.</Text>
@@ -331,8 +374,9 @@ const Profile = ({ navigation }: any) => {
         </ScrollView>
       </View>
 
+      {/* bottom 35%: my friends */}
       <View style={styles.bottomContainer}>
-        <Text style={styles.sectionTitle}>My Friends</Text>
+        <Text style={styles.sectionHeader}>My Friends</Text>
         <ScrollView>
           {friends.length === 0 ? (
             <Text style={styles.noItems}>No friends yet.</Text>
@@ -384,7 +428,7 @@ const styles = StyleSheet.create({
     flex: 1,
     textAlign: "center",
     color: "#fff",
-    fontSize: 20, // matching "Global Chat" size
+    fontSize: 20, // match Global Chat sizing
     fontWeight: "bold",
   },
   topContainer: {
@@ -404,6 +448,13 @@ const styles = StyleSheet.create({
     borderTopColor: "#ccc",
     paddingHorizontal: 10,
   },
+  sectionTitle: {
+    fontSize: 18,
+    color: "#fff",
+    marginBottom: 5,
+    fontWeight: "bold",
+    // remove underline
+  },
   searchInput: {
     height: 40,
     borderColor: "#ccc",
@@ -413,11 +464,10 @@ const styles = StyleSheet.create({
     color: "#fff",
     marginBottom: 10,
   },
-  sectionTitle: {
+  sectionHeader: {
     fontSize: 18,
     color: "#fff",
     marginBottom: 5,
-    textDecorationLine: "underline",
     fontWeight: "bold",
   },
   userRow: {
