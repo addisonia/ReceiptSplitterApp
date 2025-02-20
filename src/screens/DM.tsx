@@ -7,13 +7,16 @@ import {
   FlatList,
   TextInput,
   Pressable,
+  TouchableOpacity,
 } from "react-native";
 import { auth, database } from "../firebase";
 import { ref, onValue, push, set } from "firebase/database";
 import colors from "../../constants/colors";
-import { RouteProp, useRoute } from "@react-navigation/native";
+import { RouteProp, useNavigation, useRoute } from "@react-navigation/native";
 import { onAuthStateChanged, User } from "firebase/auth";
+import { FontAwesome, FontAwesome5 } from "@expo/vector-icons";
 
+// define route params for DM
 type DMRouteProp = RouteProp<
   { DM: { friendUid: string; friendUsername: string } },
   "DM"
@@ -28,6 +31,7 @@ interface DMMessage {
 }
 
 const DM = () => {
+  const navigation = useNavigation();
   const route = useRoute<DMRouteProp>();
   const { friendUid, friendUsername } = route.params;
 
@@ -35,15 +39,18 @@ const DM = () => {
   const [myUsername, setMyUsername] = useState<string>("");
   const [messages, setMessages] = useState<DMMessage[]>([]);
   const [newMessageText, setNewMessageText] = useState("");
+  const [expandedMessages, setExpandedMessages] = useState<
+    Record<string, boolean>
+  >({});
 
-  // watch auth state in case user changes
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, (user) => {
+    const unsub = onAuthStateChanged(auth, (user) => {
       setCurrentUser(user);
     });
-    return () => unsubscribe();
+    return () => unsub();
   }, []);
 
+  // fetch my username
   useEffect(() => {
     if (!currentUser) return;
     const userRef = ref(database, `users/${currentUser.uid}/username`);
@@ -55,14 +62,14 @@ const DM = () => {
     return () => unsub();
   }, [currentUser]);
 
-  // define a stable conversation id
+  // conversation key
   let conversationId = "";
   if (currentUser?.uid) {
     const sortedIds = [currentUser.uid, friendUid].sort();
     conversationId = `${sortedIds[0]}_${sortedIds[1]}`;
   }
 
-  // read messages from DMs/<conversationId>
+  // load messages
   useEffect(() => {
     if (!conversationId) return;
 
@@ -86,7 +93,6 @@ const DM = () => {
             timestamp: msgData.timestamp,
           });
         });
-        // sort by timestamp
         dmArray.sort((a, b) => a.timestamp - b.timestamp);
       }
       setMessages(dmArray);
@@ -95,7 +101,6 @@ const DM = () => {
     return () => unsubscribe();
   }, [conversationId]);
 
-  // send messages to DMs/<conversationId>
   const handleSendMessage = () => {
     if (!currentUser || !conversationId) return;
     if (!newMessageText.trim()) return;
@@ -115,24 +120,54 @@ const DM = () => {
       .catch((err) => console.log("Error sending DM message:", err));
   };
 
+  const toggleTimestamp = (msgKey: string) => {
+    setExpandedMessages((prev) => ({
+      ...prev,
+      [msgKey]: !prev[msgKey],
+    }));
+  };
+
   const renderMessage = ({ item }: { item: DMMessage }) => {
-    const isOwnMessage = item.senderUid === currentUser?.uid;
+    const isOwn = item.senderUid === currentUser?.uid;
+    const isExpanded = expandedMessages[item.key] || false;
+
     return (
-      <View
+      <TouchableOpacity
+        activeOpacity={0.8}
+        onPress={() => toggleTimestamp(item.key)}
         style={[
           styles.messageBubble,
-          isOwnMessage ? styles.ownBubble : styles.otherBubble,
+          isOwn ? styles.ownBubble : styles.otherBubble,
         ]}
       >
         <Text style={styles.senderName}>{item.senderName}:</Text>
         <Text style={styles.messageText}>{item.text}</Text>
-      </View>
+        {isExpanded && (
+          <Text style={styles.timestamp}>
+            {new Date(item.timestamp).toLocaleString()}
+          </Text>
+        )}
+      </TouchableOpacity>
     );
   };
 
   return (
     <View style={styles.container}>
-      <Text style={styles.header}>DM with {friendUsername}</Text>
+      {/* top bar with left arrow and DM title */}
+      <View style={styles.headerContainer}>
+        <TouchableOpacity onPress={() => navigation.goBack()}>
+          <FontAwesome5
+            name="arrow-left"
+            size={24}
+            color={colors.yellow}
+            style={{ marginRight: 10 }}
+          />
+        </TouchableOpacity>
+        <Text style={styles.header}>{friendUsername}</Text>
+        {/* put an empty view to help center the text if needed */}
+        <View style={{ width: 24, marginLeft: 10 }} />
+      </View>
+
       <FlatList
         data={messages}
         renderItem={renderMessage}
@@ -165,14 +200,25 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: colors.yuck,
-    paddingTop: 40,
+  },
+  headerContainer: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: 10,
+    paddingVertical: 15,
+    backgroundColor: colors.yuck,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.3,
+    shadowRadius: 3,
+    elevation: 4, // same shadow as global chat
   },
   header: {
     color: "#fff",
     fontSize: 20,
     fontWeight: "bold",
+    flex: 1,
     textAlign: "center",
-    marginBottom: 10,
   },
   messagesContainer: {
     paddingHorizontal: 10,
@@ -195,11 +241,16 @@ const styles = StyleSheet.create({
   },
   senderName: {
     fontWeight: "bold",
-    color: "#000", // visible on both bubble backgrounds
+    color: "#000", // visible on yellow or dark
     marginBottom: 3,
   },
   messageText: {
     color: "#000",
+  },
+  timestamp: {
+    marginTop: 5,
+    fontSize: 12,
+    color: "#eee",
   },
   inputArea: {
     flexDirection: "row",

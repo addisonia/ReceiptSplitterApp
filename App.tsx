@@ -108,10 +108,27 @@ function App() {
             component={ImportReceipts}
             options={{ gestureEnabled: true }}
           />
-          <Stack.Screen name="Profile" component={Profile} />
-          <Stack.Screen name="GroupChat" component={GroupChat} />
-          <Stack.Screen name="DM" component={DM} />
-
+          <Stack.Screen
+            name="Profile"
+            component={Profile}
+            options={{
+              gestureEnabled: true,
+            }}
+          />
+          <Stack.Screen
+            name="GroupChat"
+            component={GroupChat}
+            options={{
+              gestureEnabled: true,
+            }}
+          />
+          <Stack.Screen
+            name="DM"
+            component={DM}
+            options={{
+              gestureEnabled: true,
+            }}
+          />
         </Stack.Navigator>
       </NavigationContainer>
     </SafeAreaView>

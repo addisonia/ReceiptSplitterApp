@@ -13,4 +13,7 @@ export type RootStackParamList = {
   ImportReceipts: undefined;
   Settings: { itemId: number; otherParams: string };
   Chat: undefined;
+  Profile: undefined;
+  GroupChat: undefined;
+  DM: { friendUid: string; friendUsername: string };
 };

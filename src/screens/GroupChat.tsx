@@ -8,8 +8,11 @@ import {
   TouchableOpacity,
   ScrollView,
 } from "react-native";
+import colors from "../../constants/colors";
 import { ref, onValue } from "firebase/database";
 import { auth, database } from "../firebase";
+import { FontAwesome5 } from "@expo/vector-icons";
+import { useNavigation } from "@react-navigation/native";
 
 interface Friend {
   uid: string;
@@ -20,6 +23,8 @@ const GroupChat = () => {
   const [groupName, setGroupName] = useState("");
   const [friends, setFriends] = useState<Friend[]>([]);
   const [selectedFriends, setSelectedFriends] = useState<string[]>([]);
+
+  const navigation = useNavigation();
 
   useEffect(() => {
     const currentUser = auth.currentUser;
@@ -60,43 +65,56 @@ const GroupChat = () => {
 
   return (
     <View style={styles.container}>
-      <Text style={styles.title}>Create Group Chat</Text>
-      <TextInput
-        style={styles.groupInput}
-        placeholder="Group name..."
-        placeholderTextColor="#ccc"
-        value={groupName}
-        onChangeText={setGroupName}
-      />
+      <View style={styles.headerContainer}>
+        <TouchableOpacity onPress={() => navigation.goBack()}>
+          <FontAwesome5
+            name="arrow-left"
+            size={24}
+            color={colors.yellow}
+            style={{ marginRight: 10 }}
+          />
+        </TouchableOpacity>
+        <Text style={styles.header}>Create Group Chat</Text>
+        <View style={{ width: 24, marginLeft: 10 }} />
+      </View>
+      <View style={styles.bodyContainer}>
+        <TextInput
+          style={styles.groupInput}
+          placeholder="Group name..."
+          placeholderTextColor="#ccc"
+          value={groupName}
+          onChangeText={setGroupName}
+        />
 
-      {friends.length === 0 ? (
-        <Text style={styles.noFriendsText}>You have no friends yet.</Text>
-      ) : (
-        <>
-          <Text style={styles.subtitle}>Select friends:</Text>
-          <ScrollView>
-            {friends.map((friend) => (
-              <TouchableOpacity
-                key={friend.uid}
-                style={[
-                  styles.friendRow,
-                  selectedFriends.includes(friend.uid) &&
-                    styles.selectedFriendRow,
-                ]}
-                onPress={() => toggleFriend(friend.uid)}
-              >
-                <Text style={styles.friendName}>{friend.username}</Text>
-              </TouchableOpacity>
-            ))}
-          </ScrollView>
-          <TouchableOpacity
-            style={styles.createButton}
-            onPress={createGroupChat}
-          >
-            <Text style={styles.createButtonText}>Create Group</Text>
-          </TouchableOpacity>
-        </>
-      )}
+        {friends.length === 0 ? (
+          <Text style={styles.noFriendsText}>You have no friends yet.</Text>
+        ) : (
+          <>
+            <Text style={styles.subtitle}>Select friends:</Text>
+            <ScrollView>
+              {friends.map((friend) => (
+                <TouchableOpacity
+                  key={friend.uid}
+                  style={[
+                    styles.friendRow,
+                    selectedFriends.includes(friend.uid) &&
+                      styles.selectedFriendRow,
+                  ]}
+                  onPress={() => toggleFriend(friend.uid)}
+                >
+                  <Text style={styles.friendName}>{friend.username}</Text>
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
+            <TouchableOpacity
+              style={styles.createButton}
+              onPress={createGroupChat}
+            >
+              <Text style={styles.createButtonText}>Create Group</Text>
+            </TouchableOpacity>
+          </>
+        )}
+      </View>
     </View>
   );
 };
@@ -106,14 +124,29 @@ export default GroupChat;
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: "#5c540b",
-    paddingTop: 40,
-    paddingHorizontal: 20,
+    backgroundColor: colors.yuck,
   },
-  title: {
-    fontSize: 22,
+  bodyContainer: {
+    padding: 20,
+  },
+  headerContainer: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: 10,
+    paddingVertical: 15,
+    backgroundColor: colors.yuck,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.3,
+    shadowRadius: 3,
+    elevation: 4, // same shadow as global chat
+  },
+  header: {
     color: "#fff",
-    marginBottom: 20,
+    fontSize: 20,
+    fontWeight: "bold",
+    flex: 1,
+    textAlign: "center",
   },
   groupInput: {
     height: 40,
