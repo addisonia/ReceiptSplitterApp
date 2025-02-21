@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useRef } from "react";
+import React, { useEffect, useState } from "react";
 import {
   View,
   Text,
@@ -9,12 +9,25 @@ import {
   ScrollView,
   Alert,
   StatusBar,
-  Animated,
+  LayoutAnimation,
+  Platform,
+  UIManager,
+  SafeAreaView,
 } from "react-native";
 import { ref, onValue, set, remove, push, get } from "firebase/database";
 import { auth, database } from "../firebase";
 import { FontAwesome5 } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
+import { ViewStyle } from "react-native";
+
+
+/* enable layout animations on android */
+if (
+  Platform.OS === "android" &&
+  UIManager.setLayoutAnimationEnabledExperimental
+) {
+  UIManager.setLayoutAnimationEnabledExperimental(true);
+}
 
 // color palette
 const colors = {
@@ -49,45 +62,22 @@ interface FriendRequest {
 const Profile = ({ navigation }: any) => {
   const currentUser = auth.currentUser;
 
-  // collapsible for ADD FRIENDS
+  // collapsible flags
   const [addCollapsed, setAddCollapsed] = useState(false);
-  const addAnimatedHeight = useRef(
-    new Animated.Value(addCollapsed ? 0 : 35)
-  ).current;
+  const [requestsCollapsed, setRequestsCollapsed] = useState(false);
+  const [friendsCollapsed, setFriendsCollapsed] = useState(false);
+
+  // call LayoutAnimation whenever toggles happen
   const toggleAddSection = () => {
-    Animated.timing(addAnimatedHeight, {
-      toValue: addCollapsed ? 35 : 10,
-      duration: 300,
-      useNativeDriver: false,
-    }).start();
+    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
     setAddCollapsed(!addCollapsed);
   };
-
-  // collapsible for FRIEND REQUESTS
-  const [requestsCollapsed, setRequestsCollapsed] = useState(false);
-  const requestsAnimatedHeight = useRef(
-    new Animated.Value(requestsCollapsed ? 0 : 25)
-  ).current;
   const toggleRequestsSection = () => {
-    Animated.timing(requestsAnimatedHeight, {
-      toValue: requestsCollapsed ? 25 : 10,
-      duration: 300,
-      useNativeDriver: false,
-    }).start();
+    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
     setRequestsCollapsed(!requestsCollapsed);
   };
-
-  // collapsible for MY FRIENDS
-  const [friendsCollapsed, setFriendsCollapsed] = useState(false);
-  const friendsAnimatedHeight = useRef(
-    new Animated.Value(friendsCollapsed ? 0 : 35)
-  ).current;
   const toggleFriendsSection = () => {
-    Animated.timing(friendsAnimatedHeight, {
-      toValue: friendsCollapsed ? 35 : 10,
-      duration: 300,
-      useNativeDriver: false,
-    }).start();
+    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
     setFriendsCollapsed(!friendsCollapsed);
   };
 
@@ -104,7 +94,7 @@ const Profile = ({ navigation }: any) => {
   useEffect(() => {
     if (!currentUser) return;
     const outRef = ref(database, `outgoingRequests/${currentUser.uid}`);
-    const unsub = onValue(outRef, (snapshot) => {
+    return onValue(outRef, (snapshot) => {
       if (!snapshot.exists()) {
         setOutgoingRequests(new Set());
       } else {
@@ -113,13 +103,12 @@ const Profile = ({ navigation }: any) => {
         setOutgoingRequests(new Set(uids));
       }
     });
-    return () => unsub();
   }, [currentUser]);
 
   // 1) load all known usernames
   useEffect(() => {
     const usernamesRef = ref(database, "usernames");
-    const unsubscribe = onValue(usernamesRef, (snapshot) => {
+    return onValue(usernamesRef, (snapshot) => {
       const data = snapshot.val();
       const userArray: DBUser[] = [];
       if (data) {
@@ -131,7 +120,6 @@ const Profile = ({ navigation }: any) => {
       }
       setAllUsers(userArray);
     });
-    return () => unsubscribe();
   }, []);
 
   // 2) listen for friend requests + friend list
@@ -143,20 +131,20 @@ const Profile = ({ navigation }: any) => {
     const unsubscribeFR = onValue(frRef, (snapshot) => {
       if (!snapshot.exists()) {
         setFriendRequests([]);
-        return;
+      } else {
+        const data = snapshot.val();
+        const requests: FriendRequest[] = Object.entries(data).map(
+          ([key, val]) => {
+            const reqData = val as { fromUid: string; fromUsername: string };
+            return {
+              key,
+              fromUid: reqData.fromUid,
+              fromUsername: reqData.fromUsername,
+            };
+          }
+        );
+        setFriendRequests(requests);
       }
-      const data = snapshot.val();
-      const requests: FriendRequest[] = Object.entries(data).map(
-        ([key, val]) => {
-          const reqData = val as { fromUid: string; fromUsername: string };
-          return {
-            key,
-            fromUid: reqData.fromUid,
-            fromUsername: reqData.fromUsername,
-          };
-        }
-      );
-      setFriendRequests(requests);
     });
 
     // my friends
@@ -164,16 +152,16 @@ const Profile = ({ navigation }: any) => {
     const unsubscribeFriends = onValue(friendsRef, (snap) => {
       if (!snap.exists()) {
         setFriends([]);
-        return;
+      } else {
+        const friendData = snap.val();
+        const friendList: DBUser[] = Object.entries(friendData).map(
+          ([fUid, fUsername]) => ({
+            uid: fUid,
+            username: typeof fUsername === "string" ? fUsername : "",
+          })
+        );
+        setFriends(friendList);
       }
-      const friendData = snap.val();
-      const friendList: DBUser[] = Object.entries(friendData).map(
-        ([fUid, fUsername]) => ({
-          uid: fUid,
-          username: typeof fUsername === "string" ? fUsername : "",
-        })
-      );
-      setFriends(friendList);
     });
 
     return () => {
@@ -189,7 +177,6 @@ const Profile = ({ navigation }: any) => {
       return;
     }
     handleSearch(searchTerm);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [allUsers, friends, outgoingRequests, currentUser]);
 
   // filter out me, my friends, my outgoing requests
@@ -199,7 +186,6 @@ const Profile = ({ navigation }: any) => {
       setFilteredUsers([]);
       return;
     }
-
     const lowerTerm = term.toLowerCase();
     const myUid = currentUser.uid;
     const friendUids = new Set(friends.map((f) => f.uid));
@@ -229,11 +215,10 @@ const Profile = ({ navigation }: any) => {
     const currentUsername = await getCurrentUserUsername();
     const targetRef = ref(database, `friendRequests/${targetUser.uid}`);
     const newReqRef = push(targetRef);
-    const requestData = {
+    await set(newReqRef, {
       fromUid: currentUser.uid,
       fromUsername: currentUsername,
-    };
-    await set(newReqRef, requestData);
+    });
 
     // also mark outgoingRequests
     await set(
@@ -322,126 +307,28 @@ const Profile = ({ navigation }: any) => {
     });
   };
 
-  // render user rows for Add Friends
-  const renderSearchResult = ({ item }: { item: DBUser }) => {
-    if (!currentUser) return null;
-    const isMe = item.uid === currentUser.uid;
-    const isFriend = isAlreadyFriend(item.uid);
-    const hasSent = sentRequests.includes(item.uid);
-    const hasOutgoing = outgoingRequests.has(item.uid);
+  // style objects for collapsed vs expanded
+  // if collapsed, we show a small block (so the header is still visible)
+  // if not collapsed, let it flex
+  const addSectionStyle: ViewStyle = addCollapsed
+  ? { height: 50, overflow: "hidden" } // Fix: use "hidden" explicitly
+  : { flex: 1 };
 
-    return (
-      <View style={styles.userRow}>
-        <View style={styles.usernameContainer}>
-          <FontAwesome5
-            name="user"
-            size={16}
-            color="#d7d4b5"
-            style={styles.userIcon}
-          />
-          <Text style={styles.username}>{item.username}</Text>
-        </View>
-        {isMe ? (
-          <View style={styles.statusBadge}>
-            <Text style={styles.statusText}>You</Text>
-          </View>
-        ) : isFriend ? (
-          <View style={[styles.statusBadge, { backgroundColor: colors.green }]}>
-            <Text style={styles.statusText}>Friend</Text>
-          </View>
-        ) : hasOutgoing || hasSent ? (
-          <View
-            style={[styles.statusBadge, { backgroundColor: colors.orange }]}
-          >
-            <Text style={styles.statusText}>Pending</Text>
-          </View>
-        ) : (
-          <TouchableOpacity
-            style={styles.addButton}
-            onPress={() => handleAddFriendPress(item)}
-          >
-            <FontAwesome5 name="user-plus" size={14} color={colors.black} />
-            <Text style={styles.buttonText}>Add</Text>
-          </TouchableOpacity>
-        )}
-      </View>
-    );
-  };
+const requestsSectionStyle: ViewStyle = requestsCollapsed
+  ? { height: 50, overflow: "hidden" } // Fix: use "hidden" explicitly
+  : { flex: 1 };
 
-  // render friend requests
-  const renderFriendRequest = (req: FriendRequest) => (
-    <View style={styles.requestRow} key={req.key}>
-      <View style={styles.usernameContainer}>
-        <FontAwesome5
-          name="user-clock"
-          size={16}
-          color={colors.yellow}
-          style={styles.userIcon}
-        />
-        <Text style={styles.username}>{req.fromUsername}</Text>
-      </View>
-      <View style={styles.actionButtons}>
-        <TouchableOpacity
-          style={[styles.actionButton, styles.acceptButton]}
-          onPress={() => acceptFriendRequest(req)}
-        >
-          <FontAwesome5 name="check" size={14} color={colors.black} />
-          <Text style={styles.actionButtonText}>Accept</Text>
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={[styles.actionButton, styles.rejectButton]}
-          onPress={() => rejectFriendRequest(req)}
-        >
-          <FontAwesome5 name="times" size={14} color={colors.white} />
-          <Text style={[styles.actionButtonText, { color: colors.white }]}>
-            Reject
-          </Text>
-        </TouchableOpacity>
-      </View>
-    </View>
-  );
-
-  // render friends list
-  const renderFriend = (friend: DBUser) => (
-    <View style={styles.friendRow} key={friend.uid}>
-      <View style={styles.usernameContainer}>
-        <FontAwesome5
-          name="user-friends"
-          size={16}
-          color={colors.green}
-          style={styles.userIcon}
-        />
-        <Text style={styles.username}>{friend.username}</Text>
-      </View>
-      <View style={styles.actionButtons}>
-        <TouchableOpacity
-          style={[styles.actionButton, styles.dmButton]}
-          onPress={() => DMFriend(friend.uid, friend.username)}
-        >
-          <FontAwesome5 name="comment" size={14} color={colors.black} />
-          <Text style={styles.actionButtonText}>DM</Text>
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={[styles.actionButton, styles.removeButton]}
-          onPress={() => confirmRemoveFriend(friend.uid, friend.username)}
-        >
-          <FontAwesome5 name="user-minus" size={14} color={colors.white} />
-          <Text style={[styles.actionButtonText, { color: colors.white }]}>
-            Remove
-          </Text>
-        </TouchableOpacity>
-      </View>
-    </View>
-  );
+const friendsSectionStyle: ViewStyle = friendsCollapsed
+  ? { height: 50, overflow: "hidden" } // Fix: use "hidden" explicitly
+  : { flex: 1 };
 
   return (
-    <View style={styles.container}>
+    <SafeAreaView style={styles.flexContainer}>
       <StatusBar barStyle="light-content" />
-
       {/* gradient background */}
       <LinearGradient
         colors={[colors.yuck, colors.yuckLight]}
-        style={styles.background}
+        style={StyleSheet.absoluteFillObject}
       />
 
       {/* header */}
@@ -460,52 +347,44 @@ const Profile = ({ navigation }: any) => {
         <View style={styles.headerPlaceholder} />
       </View>
 
-      {/* top: add friends (collapsible) */}
-      <Animated.View
-        style={[
-          styles.topContainer,
-          {
-            height: addAnimatedHeight.interpolate({
-              inputRange: [0, 35],
-              outputRange: ["0%", "35%"],
-            }),
-          },
-        ]}
-      >
-        <View style={styles.sectionHeaderContainer}>
-          <FontAwesome5 name="user-plus" size={16} color={colors.yellow} />
-          <Text style={styles.sectionTitle}>Add Friends</Text>
-          <TouchableOpacity
-            style={styles.toggleButton}
-            onPress={toggleAddSection}
-          >
-            <FontAwesome5
-              name={addCollapsed ? "chevron-down" : "chevron-up"}
-              size={14}
-              color={colors.yellow}
-            />
-          </TouchableOpacity>
-        </View>
-
-        {!addCollapsed && (
-          <>
-            <View style={styles.searchContainer}>
+      {/* main content: 3 sections stacked */}
+      <View style={styles.mainContent}>
+        {/* top: add friends */}
+        <View style={[styles.sectionContainer, addSectionStyle]}>
+          <View style={styles.sectionHeaderContainer}>
+            <FontAwesome5 name="user-plus" size={16} color={colors.yellow} />
+            <Text style={styles.sectionTitle}>Add Friends</Text>
+            <TouchableOpacity
+              style={styles.toggleButton}
+              onPress={toggleAddSection}
+            >
               <FontAwesome5
-                name="search"
-                size={16}
-                color={colors.extraYuckLight}
-                style={styles.searchIcon}
+                name={addCollapsed ? "chevron-down" : "chevron-up"}
+                size={14}
+                color={colors.yellow}
               />
-              <TextInput
-                style={styles.searchInput}
-                placeholder="Search by username..."
-                placeholderTextColor={colors.extraYuckLight}
-                value={searchTerm}
-                onChangeText={handleSearch}
-              />
-            </View>
+            </TouchableOpacity>
+          </View>
 
-            <View style={styles.resultsContainer}>
+          {/* show content only if not collapsed */}
+          {!addCollapsed && (
+            <>
+              <View style={styles.searchContainer}>
+                <FontAwesome5
+                  name="search"
+                  size={16}
+                  color={colors.extraYuckLight}
+                  style={styles.searchIcon}
+                />
+                <TextInput
+                  style={styles.searchInput}
+                  placeholder="Search by username..."
+                  placeholderTextColor={colors.extraYuckLight}
+                  value={searchTerm}
+                  onChangeText={handleSearch}
+                />
+              </View>
+
               {filteredUsers.length === 0 ? (
                 <View style={styles.emptyStateContainer}>
                   <FontAwesome5
@@ -514,135 +393,254 @@ const Profile = ({ navigation }: any) => {
                     color={colors.extraYuckLight}
                   />
                   <Text style={styles.emptyStateText}>
-                    {searchTerm ? "No users found" : "Search for users to add"}
+                    {searchTerm
+                      ? "No users found"
+                      : "Search for users to add"}
                   </Text>
                 </View>
               ) : (
                 <FlatList
                   data={filteredUsers}
                   keyExtractor={(item) => item.uid}
-                  renderItem={renderSearchResult}
+                  renderItem={({ item }) => {
+                    const isMe = currentUser
+                      ? item.uid === currentUser.uid
+                      : false;
+                    const isFriend = isAlreadyFriend(item.uid);
+                    const hasSent = sentRequests.includes(item.uid);
+                    const hasOutgoing = outgoingRequests.has(item.uid);
+
+                    return (
+                      <View style={styles.userRow}>
+                        <View style={styles.usernameContainer}>
+                          <FontAwesome5
+                            name="user"
+                            size={16}
+                            color="#d7d4b5"
+                            style={styles.userIcon}
+                          />
+                          <Text style={styles.username}>{item.username}</Text>
+                        </View>
+                        {isMe ? (
+                          <View style={styles.statusBadge}>
+                            <Text style={styles.statusText}>You</Text>
+                          </View>
+                        ) : isFriend ? (
+                          <View
+                            style={[
+                              styles.statusBadge,
+                              { backgroundColor: colors.green },
+                            ]}
+                          >
+                            <Text style={styles.statusText}>Friend</Text>
+                          </View>
+                        ) : hasOutgoing || hasSent ? (
+                          <View
+                            style={[
+                              styles.statusBadge,
+                              { backgroundColor: colors.orange },
+                            ]}
+                          >
+                            <Text style={styles.statusText}>Pending</Text>
+                          </View>
+                        ) : (
+                          <TouchableOpacity
+                            style={styles.addButton}
+                            onPress={() => handleAddFriendPress(item)}
+                          >
+                            <FontAwesome5
+                              name="user-plus"
+                              size={14}
+                              color={colors.black}
+                            />
+                            <Text style={styles.buttonText}>Add</Text>
+                          </TouchableOpacity>
+                        )}
+                      </View>
+                    );
+                  }}
                   showsVerticalScrollIndicator={false}
                 />
               )}
-            </View>
-          </>
-        )}
-      </Animated.View>
-
-      {/* middle: friend requests (collapsible) */}
-      <Animated.View
-        style={[
-          styles.middleContainer,
-          {
-            height: requestsAnimatedHeight.interpolate({
-              inputRange: [0, 25],
-              outputRange: ["0%", "25%"],
-            }),
-          },
-        ]}
-      >
-        <View style={styles.sectionHeaderContainer}>
-          <FontAwesome5 name="bell" size={16} color={colors.yellow} />
-          <Text style={styles.sectionTitle}>Friend Requests</Text>
-          {friendRequests.length > 0 && (
-            <View style={styles.badgeContainer}>
-              <Text style={styles.badgeText}>{friendRequests.length}</Text>
-            </View>
+            </>
           )}
-          <TouchableOpacity
-            style={styles.toggleButton}
-            onPress={toggleRequestsSection}
-          >
-            <FontAwesome5
-              name={requestsCollapsed ? "chevron-down" : "chevron-up"}
-              size={14}
-              color={colors.yellow}
-            />
-          </TouchableOpacity>
         </View>
 
-        {!requestsCollapsed && (
-          <ScrollView showsVerticalScrollIndicator={false}>
-            {friendRequests.length === 0 ? (
-              <View style={styles.emptyStateContainer}>
-                <FontAwesome5
-                  name="inbox"
-                  size={24}
-                  color={colors.extraYuckLight}
-                />
-                <Text style={styles.emptyStateText}>No friend requests</Text>
+        {/* middle: friend requests */}
+        <View style={[styles.sectionContainer, requestsSectionStyle]}>
+          <View style={styles.sectionHeaderContainer}>
+            <FontAwesome5 name="bell" size={16} color={colors.yellow} />
+            <Text style={styles.sectionTitle}>Friend Requests</Text>
+            {friendRequests.length > 0 && (
+              <View style={styles.badgeContainer}>
+                <Text style={styles.badgeText}>{friendRequests.length}</Text>
               </View>
-            ) : (
-              friendRequests.map(renderFriendRequest)
             )}
-          </ScrollView>
-        )}
-      </Animated.View>
+            <TouchableOpacity
+              style={styles.toggleButton}
+              onPress={toggleRequestsSection}
+            >
+              <FontAwesome5
+                name={requestsCollapsed ? "chevron-down" : "chevron-up"}
+                size={14}
+                color={colors.yellow}
+              />
+            </TouchableOpacity>
+          </View>
 
-      {/* bottom: my friends (collapsible) */}
-      <Animated.View
-        style={[
-          styles.bottomContainer,
-          {
-            height: friendsAnimatedHeight.interpolate({
-              inputRange: [0, 35],
-              outputRange: ["0%", "35%"],
-            }),
-          },
-        ]}
-      >
-        <View style={styles.sectionHeaderContainer}>
-          <FontAwesome5 name="users" size={16} color={colors.yellow} />
-          <Text style={styles.sectionTitle}>My Friends</Text>
-          {friends.length > 0 && (
-            <View style={styles.badgeContainer}>
-              <Text style={styles.badgeText}>{friends.length}</Text>
-            </View>
+          {!requestsCollapsed && (
+            <ScrollView showsVerticalScrollIndicator={false}>
+              {friendRequests.length === 0 ? (
+                <View style={styles.emptyStateContainer}>
+                  <FontAwesome5
+                    name="inbox"
+                    size={24}
+                    color={colors.extraYuckLight}
+                  />
+                  <Text style={styles.emptyStateText}>No friend requests</Text>
+                </View>
+              ) : (
+                friendRequests.map((req) => (
+                  <View style={styles.requestRow} key={req.key}>
+                    <View style={styles.usernameContainer}>
+                      <FontAwesome5
+                        name="user-clock"
+                        size={16}
+                        color={colors.yellow}
+                        style={styles.userIcon}
+                      />
+                      <Text style={styles.username}>
+                        {req.fromUsername}
+                      </Text>
+                    </View>
+                    <View style={styles.actionButtons}>
+                      <TouchableOpacity
+                        style={[styles.actionButton, styles.acceptButton]}
+                        onPress={() => acceptFriendRequest(req)}
+                      >
+                        <FontAwesome5
+                          name="check"
+                          size={14}
+                          color={colors.black}
+                        />
+                        <Text style={styles.actionButtonText}>Accept</Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity
+                        style={[styles.actionButton, styles.rejectButton]}
+                        onPress={() => rejectFriendRequest(req)}
+                      >
+                        <FontAwesome5
+                          name="times"
+                          size={14}
+                          color={colors.white}
+                        />
+                        <Text
+                          style={[styles.actionButtonText, { color: colors.white }]}
+                        >
+                          Reject
+                        </Text>
+                      </TouchableOpacity>
+                    </View>
+                  </View>
+                ))
+              )}
+            </ScrollView>
           )}
-          <TouchableOpacity
-            style={styles.toggleButton}
-            onPress={toggleFriendsSection}
-          >
-            <FontAwesome5
-              name={friendsCollapsed ? "chevron-down" : "chevron-up"}
-              size={14}
-              color={colors.yellow}
-            />
-          </TouchableOpacity>
         </View>
 
-        {!friendsCollapsed && (
-          <ScrollView showsVerticalScrollIndicator={false}>
-            {friends.length === 0 ? (
-              <View style={styles.emptyStateContainer}>
-                <FontAwesome5
-                  name="user-friends"
-                  size={24}
-                  color={colors.extraYuckLight}
-                />
-                <Text style={styles.emptyStateText}>No friends yet</Text>
+        {/* bottom: my friends */}
+        <View style={[styles.sectionContainer, friendsSectionStyle]}>
+          <View style={styles.sectionHeaderContainer}>
+            <FontAwesome5 name="users" size={16} color={colors.yellow} />
+            <Text style={styles.sectionTitle}>My Friends</Text>
+            {friends.length > 0 && (
+              <View style={styles.badgeContainer}>
+                <Text style={styles.badgeText}>{friends.length}</Text>
               </View>
-            ) : (
-              friends.map(renderFriend)
             )}
-          </ScrollView>
-        )}
-      </Animated.View>
-    </View>
+            <TouchableOpacity
+              style={styles.toggleButton}
+              onPress={toggleFriendsSection}
+            >
+              <FontAwesome5
+                name={friendsCollapsed ? "chevron-down" : "chevron-up"}
+                size={14}
+                color={colors.yellow}
+              />
+            </TouchableOpacity>
+          </View>
+
+          {!friendsCollapsed && (
+            <ScrollView showsVerticalScrollIndicator={false}>
+              {friends.length === 0 ? (
+                <View style={styles.emptyStateContainer}>
+                  <FontAwesome5
+                    name="user-friends"
+                    size={24}
+                    color={colors.extraYuckLight}
+                  />
+                  <Text style={styles.emptyStateText}>No friends yet</Text>
+                </View>
+              ) : (
+                friends.map((friend) => (
+                  <View style={styles.friendRow} key={friend.uid}>
+                    <View style={styles.usernameContainer}>
+                      <FontAwesome5
+                        name="user-friends"
+                        size={16}
+                        color={colors.green}
+                        style={styles.userIcon}
+                      />
+                      <Text style={styles.username}>{friend.username}</Text>
+                    </View>
+                    <View style={styles.actionButtons}>
+                      <TouchableOpacity
+                        style={[styles.actionButton, styles.dmButton]}
+                        onPress={() => DMFriend(friend.uid, friend.username)}
+                      >
+                        <FontAwesome5
+                          name="comment"
+                          size={14}
+                          color={colors.black}
+                        />
+                        <Text style={styles.actionButtonText}>DM</Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity
+                        style={[styles.actionButton, styles.removeButton]}
+                        onPress={() =>
+                          confirmRemoveFriend(friend.uid, friend.username)
+                        }
+                      >
+                        <FontAwesome5
+                          name="user-minus"
+                          size={14}
+                          color={colors.white}
+                        />
+                        <Text
+                          style={[styles.actionButtonText, { color: colors.white }]}
+                        >
+                          Remove
+                        </Text>
+                      </TouchableOpacity>
+                    </View>
+                  </View>
+                ))
+              )}
+            </ScrollView>
+          )}
+        </View>
+      </View>
+    </SafeAreaView>
   );
 };
 
 const styles = StyleSheet.create({
-  container: {
+  flexContainer: {
     flex: 1,
+    backgroundColor: "#000", // fallback behind gradient
   },
-  background: {
-    position: "absolute",
-    left: 0,
-    right: 0,
-    top: 0,
-    bottom: 0,
+  mainContent: {
+    flex: 1,
   },
   headerContainer: {
     flexDirection: "row",
@@ -678,30 +676,19 @@ const styles = StyleSheet.create({
   headerPlaceholder: {
     width: 40,
   },
-  topContainer: {
-    // removed fixed height so it can animate
-    padding: 15,
-    paddingBottom: 5,
-    overflow: "hidden",
-  },
-  middleContainer: {
-    padding: 15,
-    paddingBottom: 5,
+  sectionContainer: {
+    // note: each container either has flex:1 or fixed height
+    // so we keep them stacked in a vertical column
+    paddingHorizontal: 15,
+    paddingBottom: 10,
     borderTopWidth: 1,
     borderTopColor: "rgba(227, 212, 0, 0.2)",
-    overflow: "hidden",
-  },
-  bottomContainer: {
-    padding: 15,
-    borderTopWidth: 1,
-    borderTopColor: "rgba(227, 212, 0, 0.2)",
-    overflow: "hidden",
   },
   sectionHeaderContainer: {
     flexDirection: "row",
     alignItems: "center",
-    marginBottom: 12,
     position: "relative",
+    marginVertical: 8,
   },
   sectionTitle: {
     fontSize: 18,
@@ -711,6 +698,11 @@ const styles = StyleSheet.create({
     textShadowColor: "rgba(0, 0, 0, 0.3)",
     textShadowOffset: { width: 1, height: 1 },
     textShadowRadius: 2,
+  },
+  toggleButton: {
+    position: "absolute",
+    right: 0,
+    padding: 5,
   },
   badgeContainer: {
     backgroundColor: colors.yellow,
@@ -723,13 +715,6 @@ const styles = StyleSheet.create({
     color: colors.black,
     fontSize: 12,
     fontWeight: "bold",
-  },
-  toggleButton: {
-    position: "absolute",
-    right: 0,
-    padding: 5,
-    // added margin to give space above and below the chevron
-    marginVertical: 12,
   },
   searchContainer: {
     flexDirection: "row",
@@ -750,8 +735,15 @@ const styles = StyleSheet.create({
     color: colors.white,
     fontSize: 16,
   },
-  resultsContainer: {
-    flex: 1,
+  emptyStateContainer: {
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: 20,
+  },
+  emptyStateText: {
+    color: colors.extraYuckLight,
+    marginTop: 10,
+    fontStyle: "italic",
   },
   userRow: {
     flexDirection: "row",
@@ -763,30 +755,6 @@ const styles = StyleSheet.create({
     marginBottom: 8,
     borderLeftWidth: 3,
     borderLeftColor: colors.yellow,
-  },
-  requestRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    paddingVertical: 12,
-    paddingHorizontal: 10,
-    backgroundColor: "rgba(227, 212, 0, 0.08)",
-    borderRadius: 10,
-    marginBottom: 8,
-    borderLeftWidth: 3,
-    borderLeftColor: colors.yellow,
-  },
-  friendRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    paddingVertical: 12,
-    paddingHorizontal: 10,
-    backgroundColor: "rgba(8, 248, 0, 0.08)",
-    borderRadius: 10,
-    marginBottom: 8,
-    borderLeftWidth: 3,
-    borderLeftColor: colors.green,
   },
   usernameContainer: {
     flexDirection: "row",
@@ -826,6 +794,30 @@ const styles = StyleSheet.create({
     fontWeight: "bold",
     fontSize: 14,
   },
+  requestRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingVertical: 12,
+    paddingHorizontal: 10,
+    backgroundColor: "rgba(227, 212, 0, 0.08)",
+    borderRadius: 10,
+    marginBottom: 8,
+    borderLeftWidth: 3,
+    borderLeftColor: colors.yellow,
+  },
+  friendRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingVertical: 12,
+    paddingHorizontal: 10,
+    backgroundColor: "rgba(8, 248, 0, 0.08)",
+    borderRadius: 10,
+    marginBottom: 8,
+    borderLeftWidth: 3,
+    borderLeftColor: colors.green,
+  },
   actionButtons: {
     flexDirection: "row",
     gap: 8,
@@ -854,16 +846,6 @@ const styles = StyleSheet.create({
     color: colors.black,
     fontWeight: "bold",
     fontSize: 14,
-  },
-  emptyStateContainer: {
-    alignItems: "center",
-    justifyContent: "center",
-    paddingVertical: 20,
-  },
-  emptyStateText: {
-    color: colors.extraYuckLight,
-    marginTop: 10,
-    fontStyle: "italic",
   },
 });
 
