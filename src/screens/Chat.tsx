@@ -351,7 +351,7 @@ const Chat = () => {
             />
           </TouchableOpacity>
         )}
-        <Text style={styles.headerText}>Global Chat</Text>
+        {isSignedIn ? (<Text style={styles.headerText}>Global Chat</Text>) : (<Text style={[styles.headerText, {marginTop: 20}]}>You're missing out...</Text>)}
         {isSignedIn && (
           <TouchableOpacity onPress={() => navigation.navigate("GroupChat")}>
             <FontAwesome

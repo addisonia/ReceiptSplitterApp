@@ -20,7 +20,6 @@ import { FontAwesome5 } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 import { ViewStyle } from "react-native";
 
-
 /* enable layout animations on android */
 if (
   Platform.OS === "android" &&
@@ -311,16 +310,16 @@ const Profile = ({ navigation }: any) => {
   // if collapsed, we show a small block (so the header is still visible)
   // if not collapsed, let it flex
   const addSectionStyle: ViewStyle = addCollapsed
-  ? { height: 50, overflow: "hidden" } // Fix: use "hidden" explicitly
-  : { flex: 1 };
+    ? { height: 50, overflow: "hidden" } // Fix: use "hidden" explicitly
+    : { flex: 1 };
 
-const requestsSectionStyle: ViewStyle = requestsCollapsed
-  ? { height: 50, overflow: "hidden" } // Fix: use "hidden" explicitly
-  : { flex: 1 };
+  const requestsSectionStyle: ViewStyle = requestsCollapsed
+    ? { height: 50, overflow: "hidden" } // Fix: use "hidden" explicitly
+    : { flex: 1 };
 
-const friendsSectionStyle: ViewStyle = friendsCollapsed
-  ? { height: 50, overflow: "hidden" } // Fix: use "hidden" explicitly
-  : { flex: 1 };
+  const friendsSectionStyle: ViewStyle = friendsCollapsed
+    ? { height: 50, overflow: "hidden" } // Fix: use "hidden" explicitly
+    : { flex: 1 };
 
   return (
     <SafeAreaView style={styles.flexContainer}>
@@ -393,9 +392,7 @@ const friendsSectionStyle: ViewStyle = friendsCollapsed
                     color={colors.extraYuckLight}
                   />
                   <Text style={styles.emptyStateText}>
-                    {searchTerm
-                      ? "No users found"
-                      : "Search for users to add"}
+                    {searchTerm ? "No users found" : "Search for users to add"}
                   </Text>
                 </View>
               ) : (
@@ -509,9 +506,7 @@ const friendsSectionStyle: ViewStyle = friendsCollapsed
                         color={colors.yellow}
                         style={styles.userIcon}
                       />
-                      <Text style={styles.username}>
-                        {req.fromUsername}
-                      </Text>
+                      <Text style={styles.username}>{req.fromUsername}</Text>
                     </View>
                     <View style={styles.actionButtons}>
                       <TouchableOpacity
@@ -535,7 +530,10 @@ const friendsSectionStyle: ViewStyle = friendsCollapsed
                           color={colors.white}
                         />
                         <Text
-                          style={[styles.actionButtonText, { color: colors.white }]}
+                          style={[
+                            styles.actionButtonText,
+                            { color: colors.white },
+                          ]}
                         >
                           Reject
                         </Text>
@@ -617,7 +615,10 @@ const friendsSectionStyle: ViewStyle = friendsCollapsed
                           color={colors.white}
                         />
                         <Text
-                          style={[styles.actionButtonText, { color: colors.white }]}
+                          style={[
+                            styles.actionButtonText,
+                            { color: colors.white },
+                          ]}
                         >
                           Remove
                         </Text>

@@ -2,6 +2,9 @@
 import React from "react";
 import { View, Text, StyleSheet, Animated, ViewStyle } from "react-native";
 import colors from "../../constants/colors";
+import { Dimensions } from "react-native";
+
+const screenHeight = Dimensions.get("window").height;
 
 interface SkeletonMessageProps {
   width: `${number}%`;
@@ -86,6 +89,7 @@ const styles = StyleSheet.create({
     flex: 0.7,
     padding: 15,
     justifyContent: "center",
+    marginTop: screenHeight * 0.05,
   },
   skeletonMessage: {
     height: 60,

@@ -632,7 +632,7 @@ const Split: React.FC = () => {
           <Animated.View
             style={[
               styles.signInBanner,
-              { opacity: bannerOpacity, backgroundColor: currentTheme.blood },
+              { opacity: bannerOpacity, backgroundColor: "red" },
             ]}
           >
             <Text
