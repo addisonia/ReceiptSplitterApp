@@ -21,6 +21,7 @@ import GoogleSignInButton from "../components/GoogleSignInButton";
 import { auth, database } from "../firebase";
 import { User, signOut } from "firebase/auth";
 import PrivacyPolicy from "../components/PrivacyPolicy";
+// removed: no longer importing `child` or `onValue`; we only use get() and update().
 import { ref, get, update } from "firebase/database";
 import Receipts from "./Receipts";
 
@@ -33,7 +34,7 @@ const screenWidth = Dimensions.get("window").width;
 const buttonWidth = screenWidth * 0.5;
 const buttonHeight = buttonWidth / 2;
 
-// NEW: an object that tracks if we've already generated a random name for a given UID in this session.
+// we keep this session tracking object if you’d like to avoid regenerating random usernames in the same session
 const generatedForUid: { [uid: string]: boolean } = {};
 
 const Home = () => {
@@ -67,94 +68,67 @@ const Home = () => {
     return () => unsubscribeAuth();
   }, []);
 
-  // CHANGED: we do a single get() call, then decide whether to create a random name
+  // changed: this no longer references the global "usernames" node. only reads/writes to users/<uid>/username.
   const fetchOrCreateUsername = async (uid: string) => {
-    // if we've already created a name for this user in this session, skip
     if (generatedForUid[uid]) {
-      console.log("Already generated username this session for UID:", uid);
-      // but still do a get(...) to see if DB has a final name
+      // we've already fetched or created a username in this session
       const finalSnap = await get(ref(database, `users/${uid}/username`));
       if (finalSnap.exists()) {
         setUsername(finalSnap.val());
       } else {
-        // fallback if DB is still empty
         setUsername("Loading...");
       }
       return;
     }
 
-    console.log("fetchOrCreateUsername for", uid);
     try {
       const snap = await get(ref(database, `users/${uid}/username`));
       if (snap.exists()) {
         const existingName = snap.val();
-        console.log("Found existing username:", existingName);
         setUsername(existingName);
       } else {
-        // no name in DB, see if we have not generated yet
+        // no username in db, generate a random one
         const newRand = generateRandomUsername();
-        console.log("No username in DB. Generating name:", newRand);
-
         setUsername(newRand);
         await setUsernameInDB(uid, newRand);
       }
-      // mark that we have created or loaded a name for this user
       generatedForUid[uid] = true;
     } catch (err) {
       console.error("Error in fetchOrCreateUsername:", err);
     }
   };
 
+  // changed: we only write to `users/<uid>/username`. we do not write to `usernames/<someUserName>`.
   const setUsernameInDB = async (uid: string, newUsername: string) => {
     try {
-      console.log("setUsernameInDB -> newUsername:", newUsername);
       const userRef = ref(database, `users/${uid}/username`);
-      const userNameRef = ref(database, `usernames/${newUsername}`);
-
       const currSnap = await get(userRef);
       const currVal = currSnap.val();
+
       if (currVal === newUsername) {
-        console.log("Name already set. no update needed");
-        return;
+        return; // no change needed
       }
 
-      const nameSnap = await get(userNameRef);
-      if (nameSnap.exists()) {
-        console.log(
-          "That random name is taken somehow. generating new again or throw error"
-        );
-        // in your case, you might do:
-        // throw new Error("Username already taken");
-        // or generate again, but let's keep it simple
-      }
-
-      const updates: { [key: string]: any } = {};
-      updates[`users/${uid}/username`] = newUsername;
-      updates[`usernames/${newUsername}`] = uid;
-
-      if (currVal) {
-        updates[`usernames/${currVal}`] = null;
-      }
-
-      console.log("Applying updates:", updates);
-      await update(ref(database), updates);
+      // simply update the username under the user’s path
+      await update(ref(database), {
+        [`users/${uid}/username`]: newUsername,
+      });
     } catch (error) {
       console.error("Error writing username to DB:", error);
     }
   };
 
   const generateRandomUsername = (): string => {
-    // pick from alphanumeric
-    const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
+    const chars =
+      "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
     let result = "";
     for (let i = 0; i < 12; i++) {
       const randomIndex = Math.floor(Math.random() * chars.length);
       result += chars[randomIndex];
     }
-    return result; // e.g. "A1b2C3d4E5f6"
+    return result;
   };
 
-  // no changes below here
   const handleSignOut = async () => {
     try {
       await signOut(auth);
@@ -164,10 +138,9 @@ const Home = () => {
     }
   };
 
+  // changed: removed the code that checks if “usernames/<newUsername>” already exists and the updates to that node.
   const handleUsernameSubmit = async () => {
-    console.log("handleUsernameSubmit function called!");
     if (!user) return;
-
     const newUsername = username.trim();
     if (!newUsername) {
       alert("Username cannot be empty.");
@@ -179,78 +152,33 @@ const Home = () => {
       const currentUsernameSnapshot = await get(currentUsernameRef);
       const currentUsername = currentUsernameSnapshot.val();
 
+      // if unchanged, close the edit field
       if (currentUsername === newUsername) {
         setIsEditingUsername(false);
         return;
       }
 
-      const usernameCheckRef = ref(database, `usernames/${newUsername}`);
-      const usernameSnapshot = await get(usernameCheckRef);
-
-      if (usernameSnapshot.exists()) {
-        alert("Username already taken. Please choose another one.");
-        return;
-      }
-
       const updates: { [key: string]: any } = {};
       updates[`users/${user.uid}/username`] = newUsername;
-      updates[`usernames/${newUsername}`] = user.uid;
 
+      // you may still want to move existing messages if you store them under "chat/messages/<username>"
       if (currentUsername) {
-        updates[`usernames/${currentUsername}`] = null;
-      }
-
-      // Update existing messages
-      if (currentUsername) {
-        console.log("handleUsernameSubmit: Updating existing messages...");
-        const oldMessagesRef = ref(
-          database,
-          `chat/messages/${currentUsername}`
-        );
-        console.log(
-          "handleUsernameSubmit: Fetching messages from path:",
-          oldMessagesRef.toString()
-        );
-
+        const oldMessagesRef = ref(database, `chat/messages/${currentUsername}`);
         const messagesSnapshot = await get(oldMessagesRef);
 
         if (messagesSnapshot.exists()) {
-          console.log("handleUsernameSubmit: Messages snapshot exists!");
-
           const messagesData = messagesSnapshot.val();
-          console.log("handleUsernameSubmit: Messages data:", messagesData);
-
           Object.keys(messagesData).forEach((messageKey) => {
             const message = messagesData[messageKey];
-            console.log(
-              "handleUsernameSubmit: Processing message key:",
-              messageKey,
-              "message:",
-              message
-            );
-
             updates[`chat/messages/${newUsername}/${messageKey}`] = {
               ...message,
               senderName: newUsername,
             };
             updates[`chat/messages/${currentUsername}/${messageKey}`] = null;
-            console.log(
-              "handleUsernameSubmit: Update prepared for message key:",
-              messageKey
-            );
           });
-        } else {
-          console.log(
-            "handleUsernameSubmit: No messages snapshot exists for old username."
-          );
         }
-      } else {
-        console.log(
-          "handleUsernameSubmit: No currentUsername to update messages from."
-        );
       }
 
-      console.log("handleUsernameSubmit: Final updates object:", updates);
       await update(ref(database), updates);
       setIsEditingUsername(false);
     } catch (error) {
@@ -304,23 +232,12 @@ const Home = () => {
               style={[styles.modalTitle, styles.editableUsername]}
               value={username}
               onChangeText={setUsername}
-              onBlur={() => {
-                console.log("TextInput onBlur event triggered!");
-                handleUsernameSubmit();
-              }}
-              onSubmitEditing={() => {
-                console.log("TextInput onSubmitEditing event triggered!");
-                handleUsernameSubmit();
-              }}
+              onBlur={handleUsernameSubmit}
+              onSubmitEditing={handleUsernameSubmit}
               autoFocus
             />
           ) : (
-            <Pressable
-              onPress={() => {
-                console.log("Username Pressable onPress triggered!");
-                setIsEditingUsername(true);
-              }}
-            >
+            <Pressable onPress={() => setIsEditingUsername(true)}>
               <AppText style={styles.modalTitle}>Hello: {username}</AppText>
             </Pressable>
           )}
