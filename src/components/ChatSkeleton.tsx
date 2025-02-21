@@ -74,7 +74,7 @@ const ChatSkeleton: React.FC = () => {
         ))}
       </View>
       <View style={styles.signInContainer}>
-        <Text style={styles.signInText}>Sign In To Access Chatrooms</Text>
+        <Text style={styles.signInText}>Sign In To Access Chat Rooms</Text>
       </View>
     </View>
   );
@@ -90,6 +90,7 @@ const styles = StyleSheet.create({
     padding: 15,
     justifyContent: "center",
     marginTop: screenHeight * 0.05,
+    paddingHorizontal: 30,
   },
   skeletonMessage: {
     height: 60,

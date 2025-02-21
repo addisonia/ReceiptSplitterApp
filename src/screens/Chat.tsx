@@ -16,7 +16,7 @@ import {
 import { FontAwesome } from "@expo/vector-icons";
 import { auth, database } from "../firebase";
 import { User, onAuthStateChanged } from "firebase/auth";
-import { ref, onValue, push, set, remove } from "firebase/database";
+import { ref, onValue, push, set, remove, get, child } from "firebase/database";
 import colors from "../../constants/colors";
 import ChatSkeleton from "../components/ChatSkeleton";
 import { useNavigation } from "@react-navigation/native";
@@ -33,6 +33,13 @@ interface Message {
   senderUid?: string;
 }
 
+interface GroupChatData {
+  id: string;
+  name: string;
+  creator: string;
+  participants: Record<string, boolean>;
+}
+
 const Chat = () => {
   const navigation = useNavigation<ChatNavProp>();
 
@@ -42,12 +49,19 @@ const Chat = () => {
   const [newMessageText, setNewMessageText] = useState("");
   const [isSignedIn, setIsSignedIn] = useState(false);
 
-  // track which messages are tapped to show timestamp
-  const [expandedMessages, setExpandedMessages] = useState<
-    Record<string, boolean>
-  >({});
+  // which chat: "global" or a groupId
+  const [selectedChat, setSelectedChat] = useState<string>("global");
+  // we'll keep a map of groupId => group data, so if a rename happens, it updates
+  const [groupChatsMap, setGroupChatsMap] = useState<Record<string, GroupChatData>>({});
+  const [groupChatArray, setGroupChatArray] = useState<GroupChatData[]>([]);
 
-  // popup state
+  // dropdown
+  const [dropdownOpen, setDropdownOpen] = useState(false);
+
+  // toggling timestamps
+  const [expandedMessages, setExpandedMessages] = useState<Record<string, boolean>>({});
+
+  // friend popup
   const [popupVisible, setPopupVisible] = useState(false);
   const [popupX, setPopupX] = useState(0);
   const [popupY, setPopupY] = useState(0);
@@ -57,24 +71,23 @@ const Chat = () => {
 
   // local friend list
   const [myFriends, setMyFriends] = useState<Record<string, string>>({});
-  // store outgoing requests
-  const [outgoingRequests, setOutgoingRequests] = useState<Set<string>>(
-    new Set()
-  );
+  const [outgoingRequests, setOutgoingRequests] = useState<Set<string>>(new Set());
+
+  // store the group participants' usernames (for the small text under header)
+  const [participantUsernames, setParticipantUsernames] = useState<string[]>([]);
 
   useEffect(() => {
     const unsubscribeAuth = onAuthStateChanged(auth, (currentUser) => {
       setUser(currentUser);
       if (currentUser) {
         setIsSignedIn(true);
-        // read existing username from DB
         fetchChatUsernameFromDB(currentUser.uid);
 
         // watch friend list
         const friendsRef = ref(database, `users/${currentUser.uid}/friends`);
         onValue(friendsRef, (snap) => {
           const data = snap.val() || {};
-          setMyFriends(data); // data => { friendUid: friendUsername }
+          setMyFriends(data);
         });
 
         // watch outgoingRequests
@@ -86,8 +99,10 @@ const Chat = () => {
             setOutgoingRequests(new Set(Object.keys(snap.val())));
           }
         });
+
+        // load the user’s groups in real time
+        loadUserGroups(currentUser.uid);
       } else {
-        // not signed in => ephemeral "Guest"
         setIsSignedIn(false);
         setUsername("Guest");
       }
@@ -102,59 +117,176 @@ const Chat = () => {
       if (dbUsername) {
         setUsername(dbUsername);
       } else {
-        // do NOT create a new name here
-        // just show "Loading..." until Home writes a name
         setUsername("Loading...");
       }
     });
   };
 
-  // load messages from "chat/messages"
-  useEffect(() => {
-    if (!isSignedIn) return;
-    const messagesRef = ref(database, "chat/messages");
-    const unsubscribe = onValue(messagesRef, (snapshot) => {
-      const data = snapshot.val();
-      const messagesArray: Message[] = [];
+  // real-time group data for each group the user has
+  const loadUserGroups = (uid: string) => {
+    const userGroupsRef = ref(database, `users/${uid}/groups`);
+    onValue(userGroupsRef, (snapshot) => {
+      const groupIdsObj = snapshot.val() || {};
+      const groupIds = Object.keys(groupIdsObj);
 
-      if (data) {
-        Object.entries(data).forEach(([_, userMessages]) => {
-          if (userMessages && typeof userMessages === "object") {
-            Object.entries(userMessages).forEach(([msgId, msgData]) => {
-              if (msgData && typeof msgData === "object") {
-                messagesArray.push({
-                  key: msgId,
-                  senderName: msgData.senderName,
-                  text: msgData.text,
-                  timestamp: msgData.timestamp,
-                  senderUid: msgData.senderUid,
-                });
-              }
-            });
+      // subscribe to each group for real-time changes
+      const newMap: Record<string, GroupChatData> = {};
+
+      groupIds.forEach((gid) => {
+        const singleGroupRef = ref(database, `groupChats/${gid}`);
+        onValue(singleGroupRef, (snap) => {
+          if (snap.exists()) {
+            const val = snap.val();
+            const groupData: GroupChatData = {
+              id: gid,
+              name: val.name,
+              creator: val.creator,
+              participants: val.participants || {},
+            };
+            newMap[gid] = groupData;
           }
+          // after reading each group, update state
+          setGroupChatsMap((prev) => {
+            const merged = { ...prev, ...newMap };
+            // remove groups that no longer exist
+            for (const k of Object.keys(merged)) {
+              if (!groupIds.includes(k)) {
+                delete merged[k];
+              }
+            }
+            const arr = Object.values(merged);
+            setGroupChatArray(arr);
+            return merged;
+          });
         });
-        messagesArray.sort((a, b) => a.timestamp - b.timestamp);
-        setMessages(messagesArray);
+      });
+
+      // if user has no groups
+      if (groupIds.length === 0) {
+        setGroupChatsMap({});
+        setGroupChatArray([]);
+      }
+    });
+  };
+
+  // whenever selectedChat changes or groupChatsMap changes,
+  // if it's not 'global', fetch participant usernames for display
+  useEffect(() => {
+    if (selectedChat === "global") {
+      setParticipantUsernames([]);
+      return;
+    }
+    const groupData = groupChatsMap[selectedChat];
+    if (!groupData) {
+      setParticipantUsernames([]);
+      return;
+    }
+    // gather participants
+    const participantUids = Object.keys(groupData.participants || {});
+    // fetch each user’s username
+    const promises = participantUids.map(async (uid) => {
+      const snap = await get(child(ref(database), `users/${uid}/username`));
+      if (snap.exists()) {
+        return snap.val() as string;
       } else {
-        setMessages([]);
+        return "Unknown";
       }
     });
 
-    return () => unsubscribe();
-  }, [isSignedIn]);
+    Promise.all(promises).then((names) => {
+      setParticipantUsernames(names);
+    });
+  }, [selectedChat, groupChatsMap]);
+
+  // load messages from global or selected group
+  useEffect(() => {
+    if (!isSignedIn) return;
+    let unsubscribe: () => void;
+
+    if (selectedChat === "global") {
+      const messagesRef = ref(database, "chat/messages");
+      unsubscribe = onValue(messagesRef, (snapshot) => {
+        const data = snapshot.val();
+        const messagesArray: Message[] = [];
+
+        if (data) {
+          Object.entries(data).forEach(([_, userMessages]) => {
+            if (typeof userMessages === "object" && userMessages !== null) {
+              Object.entries(userMessages).forEach(([msgId, msgData]) => {
+                if (typeof msgData === "object" && msgData !== null) {
+                  const md = msgData as {
+                    senderName: string;
+                    text: string;
+                    timestamp: number;
+                    senderUid: string;
+                  };
+                  messagesArray.push({
+                    key: msgId,
+                    senderName: md.senderName,
+                    text: md.text,
+                    timestamp: md.timestamp,
+                    senderUid: md.senderUid,
+                  });
+                }
+              });
+            }
+          });
+          // oldest at top
+          messagesArray.sort((a, b) => a.timestamp - b.timestamp);
+          setMessages(messagesArray);
+        } else {
+          setMessages([]);
+        }
+      });
+    } else {
+      const groupMessagesRef = ref(database, `groupChats/${selectedChat}/messages`);
+      unsubscribe = onValue(groupMessagesRef, (snapshot) => {
+        const data = snapshot.val();
+        const messagesArray: Message[] = [];
+
+        if (data) {
+          Object.entries(data).forEach(([msgId, msgData]) => {
+            if (typeof msgData === "object" && msgData !== null) {
+              const md = msgData as {
+                senderName: string;
+                text: string;
+                timestamp: number;
+                senderUid: string;
+              };
+              messagesArray.push({
+                key: msgId,
+                senderName: md.senderName,
+                text: md.text,
+                timestamp: md.timestamp,
+                senderUid: md.senderUid,
+              });
+            }
+          });
+          messagesArray.sort((a, b) => a.timestamp - b.timestamp);
+          setMessages(messagesArray);
+        } else {
+          setMessages([]);
+        }
+      });
+    }
+
+    return () => {
+      if (unsubscribe) unsubscribe();
+    };
+  }, [isSignedIn, selectedChat]);
 
   const handleSendMessage = () => {
     if (!isSignedIn) {
       alert("Sign in to send messages.");
       return;
     }
-    // if username is "Loading...", block sending
     if (!username || username === "Loading...") {
-      alert("Waiting for username to finish loading. Try again soon.");
+      alert("Waiting for username. Try again soon.");
       return;
     }
+    if (!newMessageText.trim()) return;
 
-    if (newMessageText.trim()) {
+    if (selectedChat === "global") {
       const messagesRef = ref(database, `chat/messages/${username}`);
       const newMessageRef = push(messagesRef);
       const messagePayload = {
@@ -167,6 +299,19 @@ const Chat = () => {
       set(newMessageRef, messagePayload)
         .then(() => setNewMessageText(""))
         .catch((error) => console.error("Error sending message:", error));
+    } else {
+      const groupMessagesRef = ref(database, `groupChats/${selectedChat}/messages`);
+      const newGroupMsgRef = push(groupMessagesRef);
+      const messagePayload = {
+        text: newMessageText.trim(),
+        senderName: username,
+        timestamp: Date.now(),
+        senderUid: user?.uid || "unknown-uid",
+      };
+
+      set(newGroupMsgRef, messagePayload)
+        .then(() => setNewMessageText(""))
+        .catch((error) => console.error("Error sending group message:", error));
     }
   };
 
@@ -197,7 +342,6 @@ const Chat = () => {
     setPopupVisible(true);
   };
 
-  // add friend
   const handleAddFriend = async () => {
     if (!popupTargetUid || !user) return;
     if (outgoingRequests.has(popupTargetUid)) {
@@ -207,20 +351,11 @@ const Chat = () => {
     }
 
     const myUid = user.uid;
-    const myNameRef = ref(database, `users/${myUid}/username`);
+    const usernameSnap = await get(ref(database, `users/${myUid}/username`));
     let localName = "Unknown";
-    await new Promise<void>((resolve) => {
-      onValue(
-        myNameRef,
-        (snap) => {
-          if (snap.exists()) {
-            localName = snap.val();
-          }
-          resolve();
-        },
-        { onlyOnce: true }
-      );
-    });
+    if (usernameSnap.exists()) {
+      localName = usernameSnap.val();
+    }
 
     const frRef = ref(database, `friendRequests/${popupTargetUid}`);
     const newReqRef = push(frRef);
@@ -229,10 +364,7 @@ const Chat = () => {
       fromUsername: localName,
     });
 
-    await set(
-      ref(database, `outgoingRequests/${myUid}/${popupTargetUid}`),
-      true
-    );
+    await set(ref(database, `outgoingRequests/${myUid}/${popupTargetUid}`), true);
 
     setPopupVisible(false);
     Alert.alert("Friend request sent", `Sent to ${popupTargetName}.`);
@@ -242,7 +374,7 @@ const Chat = () => {
     if (!popupTargetUid || !popupTargetName || !user) return;
     Alert.alert(
       "Remove Friend",
-      `Are you sure you want to remove ${popupTargetName} as your friend?`,
+      `Are you sure you want to remove ${popupTargetName}?`,
       [
         {
           text: "Cancel",
@@ -270,7 +402,6 @@ const Chat = () => {
     await remove(ref(database, `outgoingRequests/${friendUid}/${myUid}`));
   };
 
-  // open DM
   const handleMessage = () => {
     if (!popupTargetUid || !popupTargetName) return;
     setPopupVisible(false);
@@ -281,9 +412,26 @@ const Chat = () => {
     });
   };
 
+  // re-added sign-in skeleton + text
+  const renderSignInMessage = () => (
+    <View style={styles.signInMessageContainer}>
+      <ChatSkeleton />
+    </View>
+  );
+
+  // name to show in the header
+  const currentChatName =
+    selectedChat === "global"
+      ? "Global Chat"
+      : groupChatsMap[selectedChat]?.name || "Unknown Group";
+
+  // define a small item for each message
   const MessageItem = React.memo(({ item }: { item: Message }) => {
     const isCurrentUserMessage = user ? item.senderUid === user.uid : false;
     const isExpanded = expandedMessages[item.key] || false;
+    const timestampStyle = isCurrentUserMessage
+      ? styles.selfTimestamp // darker color for self
+      : styles.timestamp;
 
     return (
       <TouchableOpacity
@@ -327,7 +475,7 @@ const Chat = () => {
           {item.text}
         </Text>
         {isExpanded && (
-          <Text style={styles.timestamp}>
+          <Text style={timestampStyle}>
             {new Date(item.timestamp).toLocaleString()}
           </Text>
         )}
@@ -335,11 +483,9 @@ const Chat = () => {
     );
   });
 
-  const renderSignInMessage = () => <ChatSkeleton />;
-
   return (
     <View style={styles.container}>
-      {/* Top bar */}
+      {/* header */}
       <View style={styles.headerContainer}>
         {isSignedIn && (
           <TouchableOpacity onPress={() => navigation.navigate("Profile")}>
@@ -351,7 +497,29 @@ const Chat = () => {
             />
           </TouchableOpacity>
         )}
-        {isSignedIn ? (<Text style={styles.headerText}>Global Chat</Text>) : (<Text style={[styles.headerText, {marginTop: 20}]}>You're missing out...</Text>)}
+
+        {/* center text toggles dropdown */}
+        {isSignedIn ? (
+          <TouchableOpacity
+            style={styles.headerTitleWrapper}
+            onPress={() => setDropdownOpen(true)}
+          >
+            <Text style={styles.headerText}>{currentChatName}</Text>
+            <FontAwesome
+              name="chevron-down"
+              size={16}
+              color={colors.yellow}
+              style={{ marginLeft: 5 }}
+            />
+          </TouchableOpacity>
+        ) : (
+          <View style={{ flex: 1 }}>
+            <Text style={[styles.headerText, { textAlign: "center", marginTop: 10 }]}>
+              You're missing out...
+            </Text>
+          </View>
+        )}
+
         {isSignedIn && (
           <TouchableOpacity onPress={() => navigation.navigate("GroupChat")}>
             <FontAwesome
@@ -364,6 +532,55 @@ const Chat = () => {
         )}
       </View>
 
+      {/* if in a group chat, show participants below header */}
+      {isSignedIn && selectedChat !== "global" && participantUsernames.length > 0 && (
+        <View style={styles.participantList}>
+          <Text style={styles.participantText}>
+            {participantUsernames.join(", ")}
+          </Text>
+        </View>
+      )}
+
+      {/* dropdown modal */}
+      <Modal
+        transparent
+        visible={dropdownOpen}
+        animationType="fade"
+        onRequestClose={() => setDropdownOpen(false)}
+      >
+        <TouchableWithoutFeedback onPress={() => setDropdownOpen(false)}>
+          <View style={styles.modalOverlay} />
+        </TouchableWithoutFeedback>
+
+        <View style={styles.dropdownPanel}>
+          <View style={styles.dropdownContainer}>
+            <TouchableOpacity
+              style={styles.dropdownItem}
+              onPress={() => {
+                setSelectedChat("global");
+                setDropdownOpen(false);
+              }}
+            >
+              <Text style={styles.dropdownItemText}>Global Chat</Text>
+            </TouchableOpacity>
+
+            {groupChatArray.map((g) => (
+              <TouchableOpacity
+                key={g.id}
+                style={styles.dropdownItem}
+                onPress={() => {
+                  setSelectedChat(g.id);
+                  setDropdownOpen(false);
+                }}
+              >
+                <Text style={styles.dropdownItemText}>{g.name}</Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+        </View>
+      </Modal>
+
+      {/* main content */}
       {isSignedIn ? (
         <>
           <FlatList
@@ -371,9 +588,9 @@ const Chat = () => {
             renderItem={({ item }) => <MessageItem item={item} />}
             keyExtractor={(item) => item.key}
             contentContainerStyle={styles.messagesContainer}
-            inverted
             removeClippedSubviews
             windowSize={5}
+            // sorted ascending => oldest at top
           />
           <View style={styles.inputArea}>
             <TextInput
@@ -391,10 +608,11 @@ const Chat = () => {
           </View>
         </>
       ) : (
+        // if not signed in => show skeleton + text
         renderSignInMessage()
       )}
 
-      {/* custom popup bubble */}
+      {/* friend popup */}
       <Modal visible={popupVisible} transparent animationType="fade">
         <TouchableWithoutFeedback onPress={() => setPopupVisible(false)}>
           <View style={styles.modalOverlay} />
@@ -441,6 +659,7 @@ const Chat = () => {
 export default Chat;
 
 const styles = StyleSheet.create({
+  // comments in lowercase
   container: {
     flex: 1,
     backgroundColor: colors.yuck,
@@ -457,9 +676,13 @@ const styles = StyleSheet.create({
     shadowRadius: 3,
     elevation: 4,
   },
-  headerText: {
+  headerTitleWrapper: {
     flex: 1,
-    textAlign: "center",
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  headerText: {
     color: "white",
     fontSize: 20,
     fontWeight: "bold",
@@ -467,10 +690,21 @@ const styles = StyleSheet.create({
   icon: {
     marginHorizontal: 10,
   },
+
+  // participant bar
+  participantList: {
+    backgroundColor: "#193f54",
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+  },
+  participantText: {
+    color: "#ddd",
+    fontSize: 12,
+  },
+
   messagesContainer: {
     paddingVertical: 15,
     paddingHorizontal: 10,
-    flexDirection: "column-reverse",
   },
   messageBubble: {
     padding: 10,
@@ -499,7 +733,6 @@ const styles = StyleSheet.create({
   },
   messageText: {
     fontSize: 16,
-    color: "white",
   },
   currentUserText: {
     color: "black",
@@ -512,6 +745,12 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: "#ccc",
   },
+  selfTimestamp: {
+    marginTop: 5,
+    fontSize: 12,
+    color: "#333", // darker color on yellow
+  },
+
   inputArea: {
     flexDirection: "row",
     padding: 10,
@@ -541,9 +780,51 @@ const styles = StyleSheet.create({
     fontWeight: "bold",
     fontSize: 16,
   },
+
+  // dropdown modal
   modalOverlay: {
     flex: 1,
+    backgroundColor: "transparent",
   },
+  dropdownPanel: {
+    position: "absolute",
+    top: 70,
+    left: 0,
+    right: 0,
+  },
+  dropdownContainer: {
+    marginHorizontal: 20,
+    backgroundColor: "#193f54",
+    borderRadius: 6,
+    paddingVertical: 5,
+    // optional shadow
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.4,
+    shadowRadius: 4,
+    elevation: 5,
+  },
+  dropdownItem: {
+    paddingHorizontal: 15,
+    paddingVertical: 10,
+  },
+  dropdownItemText: {
+    color: "#fff",
+    fontSize: 16,
+  },
+
+  // sign in skeleton container
+  signInMessageContainer: {
+    flex: 1,
+  },
+  signInMessageText: {
+    marginTop: 20,
+    color: "#fff",
+    fontSize: 16,
+    textAlign: "center",
+  },
+
+  // friend popup
   popupContainer: {
     position: "absolute",
     width: 150,
