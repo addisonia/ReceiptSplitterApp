@@ -26,3 +26,4 @@ required installations to run code:
 - npm install --save-dev typescript@latest
 - npm install @types/react@latest @types/react-native@latest
 - npm create cloudflare@latest oauth-redirect-worker
+- npm install expo-linear-gradient
