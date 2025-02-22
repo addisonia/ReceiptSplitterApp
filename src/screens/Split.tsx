@@ -162,76 +162,114 @@ const Split: React.FC = () => {
   const importedReceiptUsed = useRef<boolean>(false);
 
   // ----------------------------
+  // Initial load from cache (runs once)
   useEffect(() => {
-    const initializeSplit = async () => { // Create an async initialization function
-        try {
-            const storedData = await AsyncStorage.getItem(SPLIT_STORAGE_KEY);
-            let initialSplitState: SplitState = { // Default state if no cache
-                receiptName: "untitled receipt",
-                buyers: [],
-                tax: 0,
-                items: [],
-                settings: {
-                    darkMode: false,
-                    offWhiteMode: false,
-                    yuckMode: false,
-                    randomMode: false,
-                    splitTaxEvenly: true,
-                },
-            };
+    const initializeSplit = async () => {
+      try {
+        const storedData = await AsyncStorage.getItem(SPLIT_STORAGE_KEY);
+        let initialSplitState: SplitState = {
+          receiptName: "untitled receipt",
+          buyers: [],
+          tax: 0,
+          items: [],
+          settings: {
+            darkMode: false,
+            offWhiteMode: false,
+            yuckMode: false,
+            randomMode: false,
+            splitTaxEvenly: true,
+          },
+        };
 
-            if (storedData) {
-                initialSplitState = JSON.parse(storedData); // Load from cache if available
-            }
-
-            // Apply cached state *before* processing imported receipt
-            setReceiptName(initialSplitState.receiptName ?? "untitled receipt");
-            setBuyers(initialSplitState.buyers ?? []);
-            setTax(initialSplitState.tax ?? 0);
-            setItems(initialSplitState.items ?? []);
-            if (initialSplitState.settings) { // Restore theme settings from cache
-                setDarkMode(initialSplitState.settings.darkMode ?? false);
-                setOffWhiteMode(initialSplitState.settings.offWhiteMode ?? false);
-                setYuckMode(initialSplitState.settings.yuckMode ?? false);
-                setRandomMode(initialSplitState.settings.randomMode ?? false);
-                setSplitTaxEvenly(initialSplitState.settings.splitTaxEvenly ?? true);
-            }
-
-
-            if (importedReceipt) { // *After* loading cache, process imported receipt
-                const safeItems = (importedReceipt.items ?? []).map((it: ItemType) => {
-                    let safeQuantity = it.quantity;
-                    if (
-                        typeof safeQuantity !== "number" ||
-                        isNaN(safeQuantity) ||
-                        safeQuantity < 1
-                    ) {
-                        safeQuantity = 1;
-                    }
-                    return { ...it, quantity: safeQuantity };
-                });
-                setReceiptName(importedReceipt.name || "untitled receipt"); // Imported receipt name overrides cache
-                setBuyers(importedReceipt.buyers || []); // Imported receipt buyers override cache
-                setItems(safeItems); // Imported receipt items override cache
-                setTax(importedReceipt.tax || 0); // Imported receipt tax overrides cache
-                importedReceiptUsed.current = true;
-                navigation.setParams({ importedReceipt: undefined }); // Clear param after use
-            }
-
-
-        } catch (error) {
-            console.log("Error during initialization:", error);
-        } finally {
-            setIsInitialized(true); // Initialize only after all loading and processing
+        if (storedData) {
+          initialSplitState = JSON.parse(storedData);
         }
+
+        // Always apply theme settings from cache on initial mount
+        if (initialSplitState.settings) {
+          setDarkMode(initialSplitState.settings.darkMode ?? false);
+          setOffWhiteMode(initialSplitState.settings.offWhiteMode ?? false);
+          setYuckMode(initialSplitState.settings.yuckMode ?? false);
+          setRandomMode(initialSplitState.settings.randomMode ?? false);
+          setSplitTaxEvenly(initialSplitState.settings.splitTaxEvenly ?? true);
+        }
+
+        // Apply receipt-related state from cache only if no imported receipt
+        if (!importedReceipt) {
+          setReceiptName(initialSplitState.receiptName ?? "untitled receipt");
+          setBuyers(initialSplitState.buyers ?? []);
+          setTax(initialSplitState.tax ?? 0);
+          setItems(initialSplitState.items ?? []);
+        }
+
+        // Handle initial imported receipt if present
+        if (importedReceipt && !importedReceiptUsed.current) {
+          const safeItems = (importedReceipt.items ?? []).map(
+            (it: ItemType) => {
+              let safeQuantity = it.quantity;
+              if (
+                typeof safeQuantity !== "number" ||
+                isNaN(safeQuantity) ||
+                safeQuantity < 1
+              ) {
+                safeQuantity = 1;
+              }
+              return { ...it, quantity: safeQuantity };
+            }
+          );
+          setReceiptName(importedReceipt.name || "untitled receipt");
+          setBuyers(importedReceipt.buyers || []);
+          setItems(safeItems);
+          setTax(importedReceipt.tax || 0);
+          importedReceiptUsed.current = true;
+          navigation.setParams({ importedReceipt: undefined });
+          console.log("Initial Imported Receipt Applied:", {
+            receiptName: importedReceipt.name,
+            buyers: importedReceipt.buyers,
+            items: safeItems,
+            tax: importedReceipt.tax,
+          });
+        }
+      } catch (error) {
+        console.log("Error during initialization:", error);
+      } finally {
+        setIsInitialized(true);
+      }
     };
 
-    initializeSplit(); // Call the initialization function
-}, []); // Run only once on component mount
+    initializeSplit();
+  }, []); // Empty dependency array for initial mount only
 
-  // ----------------------------
-  // Save on blur
-  // ----------------------------
+  // Handle subsequent imported receipts (e.g., from chat.tsx or importreceipts.tsx)
+  useEffect(() => {
+    if (importedReceipt && !importedReceiptUsed.current) {
+      const safeItems = (importedReceipt.items ?? []).map((it: ItemType) => {
+        let safeQuantity = it.quantity;
+        if (
+          typeof safeQuantity !== "number" ||
+          isNaN(safeQuantity) ||
+          safeQuantity < 1
+        ) {
+          safeQuantity = 1;
+        }
+        return { ...it, quantity: safeQuantity };
+      });
+      setReceiptName(importedReceipt.name || "untitled receipt");
+      setBuyers(importedReceipt.buyers || []);
+      setItems(safeItems);
+      setTax(importedReceipt.tax || 0);
+      importedReceiptUsed.current = true;
+      navigation.setParams({ importedReceipt: undefined });
+      console.log("Dynamic Imported Receipt Applied:", {
+        receiptName: importedReceipt.name,
+        buyers: importedReceipt.buyers,
+        items: safeItems,
+        tax: importedReceipt.tax,
+      });
+    }
+  }, [route.params?.importedReceipt, navigation]); // Re-run when importedReceipt changes, no theme reset
+
+  // Save on blur (unchanged, but ensures theme persists)
   useEffect(() => {
     const unsubscribe = navigation.addListener("blur", async () => {
       try {
@@ -253,7 +291,7 @@ const Split: React.FC = () => {
           JSON.stringify(dataToStore)
         );
       } catch (error) {
-        console.log("failed to save state on blur:", error);
+        console.log("Failed to save state on blur:", error);
       }
     });
     return unsubscribe;
