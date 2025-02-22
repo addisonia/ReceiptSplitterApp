@@ -17,6 +17,7 @@ import Chat from "./src/screens/Chat";
 import Profile from "./src/screens/Profile";
 import GroupChat from "./src/screens/GroupChat";
 import DM from "./src/screens/DM";
+import UploadReceipt from "./src/screens/UploadReceipt";
 
 const Tab = createMaterialTopTabNavigator();
 const Stack = createNativeStackNavigator();
@@ -129,6 +130,11 @@ function App() {
               gestureEnabled: true,
             }}
           />
+          <Stack.Screen
+            name="UploadReceipt"
+            component={UploadReceipt}
+            options={{ gestureEnabled: true }}
+          ></Stack.Screen>
         </Stack.Navigator>
       </NavigationContainer>
     </SafeAreaView>
