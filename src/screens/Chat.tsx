@@ -78,7 +78,12 @@ type BuyerType = {
 // Define the expected raw receipt data structure from the database
 interface RawReceiptData {
   buyers?: { name: string; selected?: boolean[] }[];
-  items?: { item?: string; price?: number; quantity?: number; buyers?: { name: string; selected?: boolean[] }[] }[];
+  items?: {
+    item?: string;
+    price?: number;
+    quantity?: number;
+    buyers?: { name: string; selected?: boolean[] }[];
+  }[];
   tax?: number;
   time_and_date?: string;
   date?: string;
@@ -143,7 +148,8 @@ function normalizeItem(rawItem: any): ItemType {
 
 // Helper to normalize a receipt object (from importreceipts.tsx)
 function normalizeReceiptData(receiptKey: string, rawData: any): ReceiptData {
-  const t = typeof rawData.time_and_date === "string" ? rawData.time_and_date : "";
+  const t =
+    typeof rawData.time_and_date === "string" ? rawData.time_and_date : "";
   let topBuyers: BuyerType[] = [];
   if (Array.isArray(rawData.buyers)) {
     topBuyers = rawData.buyers.map(normalizeBuyer);
@@ -165,9 +171,6 @@ function normalizeReceiptData(receiptKey: string, rawData: any): ReceiptData {
   };
 }
 
-
-
-
 const Chat = () => {
   const navigation = useNavigation<ChatNavProp>();
 
@@ -177,11 +180,17 @@ const Chat = () => {
   const [newMessageText, setNewMessageText] = useState("");
   const [isSignedIn, setIsSignedIn] = useState(false);
   const [selectedChat, setSelectedChat] = useState<string>("global");
-  const [groupChatsMap, setGroupChatsMap] = useState<Record<string, GroupChatData>>({});
+  const [groupChatsMap, setGroupChatsMap] = useState<
+    Record<string, GroupChatData>
+  >({});
   const [groupChatArray, setGroupChatArray] = useState<GroupChatData[]>([]);
-  const [longPressedMessage, setLongPressedMessage] = useState<Message | null>(null);
+  const [longPressedMessage, setLongPressedMessage] = useState<Message | null>(
+    null
+  );
   const [dropdownOpen, setDropdownOpen] = useState(false);
-  const [expandedMessages, setExpandedMessages] = useState<Record<string, boolean>>({});
+  const [expandedMessages, setExpandedMessages] = useState<
+    Record<string, boolean>
+  >({});
   const [popupVisible, setPopupVisible] = useState(false);
   const [popupX, setPopupX] = useState(0);
   const [popupY, setPopupY] = useState(0);
@@ -189,8 +198,12 @@ const Chat = () => {
   const [popupTargetName, setPopupTargetName] = useState<string | null>(null);
   const [isTargetFriend, setIsTargetFriend] = useState(false);
   const [myFriends, setMyFriends] = useState<Record<string, string>>({});
-  const [outgoingRequests, setOutgoingRequests] = useState<Set<string>>(new Set());
-  const [participantUsernames, setParticipantUsernames] = useState<string[]>([]);
+  const [outgoingRequests, setOutgoingRequests] = useState<Set<string>>(
+    new Set()
+  );
+  const [participantUsernames, setParticipantUsernames] = useState<string[]>(
+    []
+  );
 
   useEffect(() => {
     const unsubscribeAuth = onAuthStateChanged(auth, (currentUser) => {
@@ -327,7 +340,10 @@ const Chat = () => {
         }
       });
     } else {
-      const groupMessagesRef = ref(database, `groupChats/${selectedChat}/messages`);
+      const groupMessagesRef = ref(
+        database,
+        `groupChats/${selectedChat}/messages`
+      );
       unsubscribe = onValue(groupMessagesRef, (snapshot) => {
         const data = snapshot.val();
         const messagesArray: Message[] = [];
@@ -380,7 +396,10 @@ const Chat = () => {
         .then(() => setNewMessageText(""))
         .catch((error) => console.error("Error sending message:", error));
     } else {
-      const groupMessagesRef = ref(database, `groupChats/${selectedChat}/messages`);
+      const groupMessagesRef = ref(
+        database,
+        `groupChats/${selectedChat}/messages`
+      );
       const newGroupMsgRef = push(groupMessagesRef);
       const messagePayload = {
         text: newMessageText.trim(),
@@ -439,7 +458,10 @@ const Chat = () => {
       fromUid: myUid,
       fromUsername: localName,
     });
-    await set(ref(database, `outgoingRequests/${myUid}/${popupTargetUid}`), true);
+    await set(
+      ref(database, `outgoingRequests/${myUid}/${popupTargetUid}`),
+      true
+    );
     setPopupVisible(false);
     Alert.alert("Friend request sent", `Sent to ${popupTargetName}.`);
   };
@@ -496,9 +518,14 @@ const Chat = () => {
           onPress: async () => {
             try {
               await remove(
-                ref(database, `groupChats/${selectedChat}/participants/${user.uid}`)
+                ref(
+                  database,
+                  `groupChats/${selectedChat}/participants/${user.uid}`
+                )
               );
-              await remove(ref(database, `users/${user.uid}/groups/${selectedChat}`));
+              await remove(
+                ref(database, `users/${user.uid}/groups/${selectedChat}`)
+              );
               setSelectedChat("global");
             } catch (err) {
               console.error("Error leaving group:", err);
@@ -522,7 +549,12 @@ const Chat = () => {
   };
 
   const handleImportReceipt = async () => {
-    if (!longPressedMessage || !longPressedMessage.receiptData || !longPressedMessage.senderUid) return;
+    if (
+      !longPressedMessage ||
+      !longPressedMessage.receiptData ||
+      !longPressedMessage.senderUid
+    )
+      return;
     setPopupVisible(false);
 
     const receiptName = longPressedMessage.receiptData.name;
@@ -552,7 +584,10 @@ const Chat = () => {
           ],
         });
       } else {
-        Alert.alert("Error", `Receipt "${receiptName}" not found in sender's receipts.`);
+        Alert.alert(
+          "Error",
+          `Receipt "${receiptName}" not found in sender's receipts.`
+        );
       }
     } catch (error) {
       console.error("Error fetching receipt:", error);
@@ -611,7 +646,9 @@ const Chat = () => {
           >
             {item.senderName} uploaded a receipt
           </Text>
-          <Text style={styles.receiptTitle}>{item.receiptData.name || "Unnamed Receipt"}</Text>
+          <Text style={styles.receiptTitle}>
+            {item.receiptData.name || "Unnamed Receipt"}
+          </Text>
 
           {isExpanded && (
             <>
@@ -636,7 +673,8 @@ const Chat = () => {
                     return (
                       <View key={index} style={styles.receiptItemRow}>
                         <Text style={styles.receiptItemText}>
-                          {rItem.item || "Unnamed"} (x{qty}) - ${itemTotal.toFixed(2)}
+                          {rItem.item || "Unnamed"} (x{qty}) - $
+                          {itemTotal.toFixed(2)}
                         </Text>
                         <Text style={styles.receiptItemBuyers}>
                           Buyers: {buyerNames || "None"}
@@ -769,13 +807,15 @@ const Chat = () => {
           </TouchableOpacity>
         )}
       </View>
-      {isSignedIn && selectedChat !== "global" && participantUsernames.length > 0 && (
-        <View style={styles.participantList}>
-          <Text style={styles.participantText}>
-            {participantUsernames.join(", ")}
-          </Text>
-        </View>
-      )}
+      {isSignedIn &&
+        selectedChat !== "global" &&
+        participantUsernames.length > 0 && (
+          <View style={styles.participantList}>
+            <Text style={styles.participantText}>
+              {participantUsernames.join(", ")}
+            </Text>
+          </View>
+        )}
       <Modal
         transparent
         visible={dropdownOpen}
@@ -885,11 +925,15 @@ const Chat = () => {
             <TouchableOpacity onPress={handleMessage} style={styles.popupItem}>
               <Text style={styles.popupText}>Message</Text>
             </TouchableOpacity>
-            {selectedChat !== "global" && longPressedMessage?.type === "receipt" && (
-              <TouchableOpacity onPress={handleImportReceipt} style={styles.popupItem}>
-                <Text style={styles.popupText}>Import Receipt</Text>
-              </TouchableOpacity>
-            )}
+            {selectedChat !== "global" &&
+              longPressedMessage?.type === "receipt" && (
+                <TouchableOpacity
+                  onPress={handleImportReceipt}
+                  style={styles.popupItem}
+                >
+                  <Text style={styles.popupText}>Import Receipt</Text>
+                </TouchableOpacity>
+              )}
           </View>
         )}
       </Modal>

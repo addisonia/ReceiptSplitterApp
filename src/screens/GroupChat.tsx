@@ -10,12 +10,33 @@ import {
   Alert,
   Animated,
   Easing,
+  StatusBar,
+  KeyboardAvoidingView,
+  Platform,
 } from "react-native";
-import colors from "../../constants/colors";
 import { ref, onValue, push, set, get, update } from "firebase/database";
 import { auth, database } from "../firebase";
 import { FontAwesome5 } from "@expo/vector-icons";
 import { useNavigation } from "@react-navigation/native";
+
+// Use colors from the theme
+const colors = {
+  white: "#ffffff",
+  offWhite: "#5c540b",
+  offWhite2: "#5c540b",
+  lightGray: "#7d7a55",
+  lightGray2: "#7d7a55",
+  yellow: "#e3d400",
+  green: "#08f800",
+  yuck: "#5c540b",
+  yuckLight: "#9e9b7b",
+  blood: "rgb(182,57,11)",
+  orange: "#de910d",
+  gray1: "#a4a4a4",
+  black: "#000000",
+  textDefault: "#000000",
+  extraYuckLight: "#d7d4b5",
+};
 
 interface Friend {
   uid: string;
@@ -209,52 +230,62 @@ const GroupChat = () => {
   };
 
   return (
-    <View style={styles.container}>
-      {/* header */}
+    <KeyboardAvoidingView 
+      behavior={Platform.OS === "ios" ? "padding" : "height"}
+      style={styles.container}
+    >
+      <StatusBar barStyle="light-content" backgroundColor={colors.yuck} />
+      
+      {/* Header */}
       <View style={styles.headerContainer}>
         <TouchableOpacity
-          style={styles.backArrowWrapper}
+          style={styles.backButton}
           onPress={() => navigation.goBack()}
         >
-          <FontAwesome5
-            name="arrow-left"
-            size={24}
-            color={colors.yellow}
-            style={{ marginRight: 10 }}
-          />
+          <FontAwesome5 name="arrow-left" size={20} color={colors.yellow} />
         </TouchableOpacity>
-        <Text style={styles.header}>Create Group Chat</Text>
-        <View style={{ width: 24, marginLeft: 10 }} />
+        <Text style={styles.headerTitle}>Create Group Chat</Text>
+        <View style={styles.headerRightPlaceholder} />
       </View>
 
-      {/* card container */}
-      <View style={styles.card}>
-        <Text style={styles.label}>Group Name</Text>
-        <Animated.View
-          style={[
-            {
-              transform: [{ translateX: shakeAnim }],
-            },
-          ]}
-        >
-          <TextInput
-            style={[
-              styles.groupInput,
-              !groupName.trim() ? styles.groupInputError : {},
-            ]}
-            placeholder="My Fun Group"
-            placeholderTextColor="#ccc"
-            value={groupName}
-            onChangeText={setGroupName}
-          />
-        </Animated.View>
+      {/* Main Content */}
+      <View style={styles.contentContainer}>
+        {/* Group Name Input */}
+        <View style={styles.inputSection}>
+          <Text style={styles.sectionTitle}>GROUP NAME</Text>
+          <Animated.View style={{ transform: [{ translateX: shakeAnim }] }}>
+            <View style={styles.inputWrapper}>
+              <FontAwesome5 name="users" size={18} color={colors.extraYuckLight} style={styles.inputIcon} />
+              <TextInput
+                style={[styles.groupInput, !groupName.trim() ? styles.groupInputError : {}]}
+                placeholder="My Fun Group"
+                placeholderTextColor={colors.extraYuckLight}
+                value={groupName}
+                onChangeText={setGroupName}
+              />
+            </View>
+          </Animated.View>
+        </View>
 
-        {friends.length === 0 ? (
-          <Text style={styles.noFriendsText}>You have no friends yet.</Text>
-        ) : (
-          <>
-            <Text style={styles.label}>Select Friends</Text>
-            <ScrollView style={styles.scrollArea}>
+        {/* Friends Selection */}
+        <View style={styles.friendsSection}>
+          <View style={styles.sectionHeaderRow}>
+            <Text style={styles.sectionTitle}>SELECT FRIENDS</Text>
+            <Text style={styles.selectedCount}>
+              {selectedFriends.length} selected
+            </Text>
+          </View>
+
+          {friends.length === 0 ? (
+            <View style={styles.emptyStateContainer}>
+              <FontAwesome5 name="user-friends" size={40} color={colors.extraYuckLight} />
+              <Text style={styles.noFriendsText}>You have no friends yet</Text>
+            </View>
+          ) : (
+            <ScrollView 
+              style={styles.scrollArea}
+              showsVerticalScrollIndicator={false}
+            >
               {friends.map((friend) => {
                 const isSelected = selectedFriends.includes(friend.uid);
                 return (
@@ -265,50 +296,67 @@ const GroupChat = () => {
                       isSelected && styles.friendRowSelected,
                     ]}
                     onPress={() => toggleFriend(friend.uid)}
+                    activeOpacity={0.7}
                   >
+                    <View style={styles.friendAvatarContainer}>
+                      <View style={[
+                        styles.friendAvatar,
+                        isSelected && styles.friendAvatarSelected
+                      ]}>
+                        <Text style={styles.friendInitial}>
+                          {friend.username.charAt(0).toUpperCase()}
+                        </Text>
+                      </View>
+                    </View>
                     <Text style={styles.friendName}>{friend.username}</Text>
+                    {isSelected && (
+                      <FontAwesome5 name="check-circle" size={20} color={colors.yellow} style={styles.checkIcon} />
+                    )}
                   </TouchableOpacity>
                 );
               })}
             </ScrollView>
-          </>
-        )}
+          )}
+        </View>
 
-        {/* error bubble if needed */}
+        {/* Error Message */}
         {errorMessage !== "" && (
           <View style={styles.errorBubble}>
+            <FontAwesome5 name="exclamation-circle" size={16} color="#ffdddd" style={styles.errorIcon} />
             <Text style={styles.errorText}>{errorMessage}</Text>
           </View>
         )}
 
+        {/* Create Button */}
         <TouchableOpacity
           style={[
             styles.createButton,
             isPressed && styles.createButtonPressed,
+            selectedFriends.length < 2 && styles.createButtonDisabled
           ]}
           onPressIn={() => setIsPressed(true)}
           onPressOut={() => setIsPressed(false)}
           onPress={createGroupChat}
+          activeOpacity={0.8}
         >
-          <Text style={styles.createButtonText}>Create</Text>
+          <Text style={styles.createButtonText}>CREATE GROUP</Text>
         </TouchableOpacity>
       </View>
 
-      {/* success bubble (shows up if groupCreatedMessage is non-empty),
-          placed BELOW the card */}
+      {/* Success Message */}
       {groupCreatedMessage !== "" && (
-        <View style={styles.successBubble}>
+        <Animated.View style={styles.successBubble}>
+          <FontAwesome5 name="check-circle" size={16} color="#d1e7dd" style={styles.successIcon} />
           <Text style={styles.successText}>{groupCreatedMessage}</Text>
-        </View>
+        </Animated.View>
       )}
-    </View>
+    </KeyboardAvoidingView>
   );
 };
 
 export default GroupChat;
 
 const styles = StyleSheet.create({
-  // comments in lowercase
   container: {
     flex: 1,
     backgroundColor: colors.yuck,
@@ -316,111 +364,197 @@ const styles = StyleSheet.create({
   headerContainer: {
     flexDirection: "row",
     alignItems: "center",
-    paddingVertical: 15,
+    justifyContent: "space-between",
+    paddingVertical: 16,
+    paddingHorizontal: 16,
     backgroundColor: colors.yuck,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.3,
-    shadowRadius: 3,
-    elevation: 4,
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(0,0,0,0.1)',
   },
-  backArrowWrapper: {
-    marginLeft: 10, // left margin
+  backButton: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: 'rgba(0,0,0,0.2)',
+    justifyContent: 'center',
+    alignItems: 'center',
   },
-  header: {
-    color: "#fff",
-    fontSize: 20,
-    fontWeight: "bold",
+  headerTitle: {
+    color: colors.white,
+    fontSize: 18,
+    fontWeight: "700",
+  },
+  headerRightPlaceholder: {
+    width: 40,
+  },
+  contentContainer: {
     flex: 1,
-    textAlign: "center",
+    padding: 20,
   },
-  card: {
-    backgroundColor: "#143e52",
-    margin: 20,
-    borderRadius: 8,
-    padding: 15,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 3 },
-    shadowOpacity: 0.4,
-    shadowRadius: 4,
-    elevation: 5,
+  inputSection: {
+    marginBottom: 24,
   },
-  label: {
-    fontSize: 16,
-    color: "#fff",
-    marginBottom: 5,
-    marginTop: 10,
+  sectionTitle: {
+    fontSize: 13,
+    fontWeight: "700",
+    color: colors.extraYuckLight,
+    marginBottom: 10,
+    letterSpacing: 1,
+  },
+  inputWrapper: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    height: 50,
+    borderRadius: 12,
+    backgroundColor: 'rgba(0,0,0,0.2)',
+    paddingHorizontal: 12,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.1)',
+  },
+  inputIcon: {
+    marginRight: 10,
   },
   groupInput: {
-    height: 40,
-    borderColor: "#ccc",
-    borderWidth: 1,
-    borderRadius: 8,
-    paddingHorizontal: 10,
-    color: "#fff",
+    flex: 1,
+    height: '100%',
+    color: colors.white,
+    fontSize: 16,
   },
   groupInputError: {
-    borderColor: "red",
+    borderColor: colors.blood,
+  },
+  friendsSection: {
+    flex: 1,
+  },
+  sectionHeaderRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 10,
+  },
+  selectedCount: {
+    fontSize: 13,
+    color: colors.yellow,
+    fontWeight: '600',
+  },
+  emptyStateContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingVertical: 40,
   },
   noFriendsText: {
-    color: "#fff",
+    color: colors.extraYuckLight,
     fontSize: 16,
-    marginTop: 15,
-    marginBottom: 10,
+    marginTop: 12,
+    textAlign: 'center',
   },
   scrollArea: {
-    maxHeight: 200,
-    marginVertical: 10,
+    flex: 1,
   },
   friendRow: {
-    backgroundColor: "#114b68",
-    padding: 10,
-    borderRadius: 8,
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(0,0,0,0.2)',
+    padding: 15,
+    borderRadius: 12,
     marginBottom: 10,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.05)',
   },
   friendRowSelected: {
-    backgroundColor: "#d4a017",
+    backgroundColor: 'rgba(227, 212, 0, 0.15)',
+    borderColor: colors.yellow,
+  },
+  friendAvatarContainer: {
+    marginRight: 12,
+  },
+  friendAvatar: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: colors.offWhite,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  friendAvatarSelected: {
+    backgroundColor: colors.yellow,
+  },
+  friendInitial: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: colors.white,
   },
   friendName: {
-    color: "#fff",
+    flex: 1,
+    color: colors.white,
+    fontSize: 16,
+    fontWeight: '500',
+  },
+  checkIcon: {
+    marginLeft: 10,
   },
   errorBubble: {
-    backgroundColor: "#7b1d1d",
-    paddingHorizontal: 10,
-    paddingVertical: 8,
-    borderRadius: 8,
-    marginTop: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(182,57,11,0.2)',
+    padding: 12,
+    borderRadius: 12,
+    marginTop: 16,
+    borderWidth: 1,
+    borderColor: 'rgba(182,57,11,0.3)',
+  },
+  errorIcon: {
+    marginRight: 8,
   },
   errorText: {
     color: "#ffdddd",
     fontSize: 14,
-    fontWeight: "bold",
+    fontWeight: "500",
   },
   createButton: {
-    backgroundColor: "#d4a017", // yellow
-    paddingVertical: 12,
-    borderRadius: 8,
-    marginTop: 15,
+    backgroundColor: colors.yellow,
+    height: 54,
+    borderRadius: 12,
+    marginTop: 20,
+    justifyContent: 'center',
+    alignItems: 'center',
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.3,
+    shadowRadius: 3,
+    elevation: 5,
   },
   createButtonPressed: {
-    backgroundColor: "#2ecc71", // bright green
+    backgroundColor: colors.green,
+  },
+  createButtonDisabled: {
+    opacity: 0.7,
   },
   createButtonText: {
-    textAlign: "center",
-    color: "#000",
-    fontWeight: "bold",
+    color: colors.black,
+    fontWeight: "700",
     fontSize: 16,
+    letterSpacing: 0.5,
   },
   successBubble: {
-    backgroundColor: "#0f5132",
-    paddingHorizontal: 15,
-    paddingVertical: 8,
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(8,248,0,0.2)',
+    paddingHorizontal: 16,
+    paddingVertical: 14,
     marginHorizontal: 20,
-    borderRadius: 8,
+    marginBottom: 20,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: 'rgba(8,248,0,0.3)',
+  },
+  successIcon: {
+    marginRight: 8,
   },
   successText: {
-    color: "#d1e7dd",
-    fontSize: 16,
-    fontWeight: "bold",
+    color: colors.white,
+    fontSize: 15,
+    fontWeight: "600",
   },
 });
