@@ -12,6 +12,7 @@ import {
   Modal,
   Dimensions,
   Alert,
+  Animated,
 } from "react-native";
 import { FontAwesome } from "@expo/vector-icons";
 import { auth, database } from "../firebase";
@@ -22,6 +23,7 @@ import ChatSkeleton from "../components/ChatSkeleton";
 import { useNavigation } from "@react-navigation/native";
 import { RootStackParamList } from "../types/RootStackParams";
 import { NativeStackNavigationProp } from "@react-navigation/native-stack";
+import Icon from 'react-native-vector-icons/Feather';
 
 /* define route type */
 type ChatNavProp = NativeStackNavigationProp<RootStackParamList, "Chat">;
@@ -563,9 +565,10 @@ const Chat = () => {
   };
 
   const handleUploadReceipt = () => {
-    // pass the local username to the UploadReceipt screen
+    if (!username) return; // prevent navigation if username is not loaded
     navigation.navigate("UploadReceipt", { groupId: selectedChat, myUsername: username });
   };
+  
 
   const handleImportReceipt = async () => {
     if (!longPressedMessage || !longPressedMessage.receiptData || !longPressedMessage.senderUid) {
@@ -895,46 +898,62 @@ const Chat = () => {
         </Pressable>
       </View>
 
-      {/* popup menu */}
-      <Modal visible={popupVisible} transparent animationType="fade">
-        <TouchableWithoutFeedback onPress={() => setPopupVisible(false)}>
-          <View style={styles.modalOverlay} />
-        </TouchableWithoutFeedback>
-        {popupVisible && (
-          <View
-            style={[
-              styles.popupContainer,
-              {
-                top: popupY,
-                left: Math.min(popupX, Dimensions.get("window").width - 150),
-              },
-            ]}
-          >
-            {isTargetFriend ? (
-              <TouchableOpacity onPress={confirmRemoveFriend} style={styles.popupItem}>
-                <Text style={[styles.popupText, { color: "red" }]}>
-                  Remove Friend
-                </Text>
-              </TouchableOpacity>
-            ) : (
-              <TouchableOpacity onPress={handleAddFriend} style={styles.popupItem}>
-                <Text style={styles.popupText}>Add Friend</Text>
-              </TouchableOpacity>
-            )}
-            <TouchableOpacity onPress={handleMessage} style={styles.popupItem}>
-              <Text style={styles.popupText}>Message</Text>
-            </TouchableOpacity>
-            {selectedChat !== "global" && longPressedMessage?.type === "receipt" && (
-              <TouchableOpacity
-                onPress={handleImportReceipt}
-                style={styles.popupItem}
-              >
-                <Text style={styles.popupText}>Import Receipt</Text>
-              </TouchableOpacity>
-            )}
+{/* popup menu */}
+<Modal visible={popupVisible} transparent animationType="fade">
+  <TouchableWithoutFeedback onPress={() => setPopupVisible(false)}>
+    <View style={styles.modalOverlay} />
+  </TouchableWithoutFeedback>
+  {popupVisible && (
+    <Animated.View
+      style={[
+        styles.popupContainer,
+        {
+          top: popupY,
+          left: Math.min(popupX, Dimensions.get("window").width - 180),
+        },
+      ]}
+    >
+      {isTargetFriend ? (
+        <TouchableOpacity onPress={confirmRemoveFriend} style={styles.popupItem}>
+          <View style={styles.popupItemContent}>
+            <Icon name="user-minus" size={18} color="#FF5252" style={styles.popupIcon} />
+            <Text style={[styles.popupText, { color: "#FF5252" }]}>
+              Remove Friend
+            </Text>
           </View>
-        )}
-      </Modal>
+        </TouchableOpacity>
+      ) : (
+        <TouchableOpacity onPress={handleAddFriend} style={styles.popupItem}>
+          <View style={styles.popupItemContent}>
+            <Icon name="user-plus" size={18} color={colors.yellow} style={styles.popupIcon} />
+            <Text style={[styles.popupText, { color: colors.yellow }]}>Add Friend</Text>
+          </View>
+        </TouchableOpacity>
+      )}
+      <View style={styles.popupDivider} />
+      <TouchableOpacity onPress={handleMessage} style={styles.popupItem}>
+        <View style={styles.popupItemContent}>
+          <Icon name="message-circle" size={18} color="#fff" style={styles.popupIcon} />
+          <Text style={styles.popupText}>Message</Text>
+        </View>
+      </TouchableOpacity>
+      {selectedChat !== "global" && longPressedMessage?.type === "receipt" && (
+        <>
+          <View style={styles.popupDivider} />
+          <TouchableOpacity
+            onPress={handleImportReceipt}
+            style={styles.popupItem}
+          >
+            <View style={styles.popupItemContent}>
+              <Icon name="download" size={18} color="#fff" style={styles.popupIcon} />
+              <Text style={styles.popupText}>Import Receipt</Text>
+            </View>
+          </TouchableOpacity>
+        </>
+      )}
+    </Animated.View>
+  )}
+</Modal>
     </View>
   );
 };
@@ -1058,10 +1077,6 @@ const styles = StyleSheet.create({
     fontWeight: "bold",
     fontSize: 16,
   },
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: "rgba(0, 0, 0, 0.5)",
-  },
   dropdownPanel: {
     position: "absolute",
     top: 70,
@@ -1115,20 +1130,47 @@ const styles = StyleSheet.create({
   signInMessageContainer: {
     flex: 1,
   },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: "rgba(0, 0, 0, 0.6)", // Darker, more modern overlay
+  },
   popupContainer: {
     position: "absolute",
-    width: 150,
-    backgroundColor: "#333",
-    padding: 10,
-    borderRadius: 8,
+    width: 180,
+    backgroundColor: "#1E2A38", // Darker, more modern blue
+    borderRadius: 12,
+    padding: 6,
     zIndex: 999,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 8,
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.1)",
   },
   popupItem: {
-    paddingVertical: 8,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    borderRadius: 8,
+  },
+  popupItemContent: {
+    flexDirection: "row",
+    alignItems: "center",
+  },
+  popupIcon: {
+    marginRight: 12,
   },
   popupText: {
     color: "#fff",
     fontSize: 16,
+    fontWeight: "500",
+  },
+  popupDivider: {
+    height: 1,
+    backgroundColor: "rgba(255, 255, 255, 0.1)",
+    marginVertical: 5,
+    marginHorizontal: 2,
   },
   receiptBubble: {
     backgroundColor: "#194D33",

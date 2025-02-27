@@ -26,5 +26,5 @@ export type RootStackParamList = {
   Profile: undefined;
   GroupChat: undefined;
   DM: { friendUid: string; friendUsername: string };
-  UploadReceipt: { groupId: string };
+  UploadReceipt: { groupId: string; myUsername: string };
 };
