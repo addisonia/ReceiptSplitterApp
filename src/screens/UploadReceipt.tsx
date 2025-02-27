@@ -14,7 +14,7 @@ import colors from "../../constants/colors";
 import { auth, database } from "../firebase";
 import { ref, onValue, push, set } from "firebase/database";
 
-// types for buyer, item, and receipt
+/* define buyer, item, and receipt types */
 export type BuyerType = {
   name: string;
   selected: boolean[];
@@ -38,7 +38,12 @@ export type ReceiptData = {
 export default function UploadReceipt() {
   const navigation = useNavigation<any>();
   const route = useRoute<any>();
-  const groupId = route.params?.groupId; // group id passed from Chat
+
+  // the group id passed from Chat
+  const groupId = route.params?.groupId;
+  // the username from Chat
+  const chatUsername = route.params?.myUsername || "Unknown User";
+
   const [receipts, setReceipts] = useState<ReceiptData[]>([]);
   const [backIconColor, setBackIconColor] = useState(colors.yellow);
 
@@ -56,7 +61,7 @@ export default function UploadReceipt() {
       const loaded = Object.keys(data).map((key) =>
         normalizeReceiptData(key, data[key])
       );
-      // sort by most recent
+      // sort by most recent date
       loaded.sort(
         (a, b) =>
           new Date(b.time_and_date).getTime() - new Date(a.time_and_date).getTime()
@@ -78,20 +83,19 @@ export default function UploadReceipt() {
       const newGroupMsgRef = push(groupMessagesRef);
 
       const userUid = auth.currentUser.uid;
-      const displayName = auth.currentUser.displayName || "Unknown User";
+      const senderName = chatUsername; // use the username from chat
 
       // build a full payload with receipt data
       const messagePayload = {
         type: "receipt",
         timestamp: Date.now(),
         senderUid: userUid,
-        senderName: displayName,
+        senderName: senderName,
         receiptData: {
           name: receipt.name,
           date: receipt.time_and_date,
           tax: receipt.tax,
           items: receipt.items,
-          // if you want to include buyers or anything else, add it here
           buyers: receipt.buyers,
         },
       };
@@ -110,10 +114,8 @@ export default function UploadReceipt() {
 
   function calculateTotal(receipt: ReceiptData) {
     return (
-      receipt.items.reduce(
-        (sum, item) => sum + item.price * item.quantity,
-        0
-      ) + (receipt.tax || 0)
+      receipt.items.reduce((sum, item) => sum + item.price * item.quantity, 0) +
+      (receipt.tax || 0)
     );
   }
 
@@ -164,7 +166,7 @@ export default function UploadReceipt() {
   );
 }
 
-// helper functions
+// helper functions for normalizing
 function normalizeReceiptData(receiptKey: string, rawData: any): ReceiptData {
   return {
     name: receiptKey,
@@ -192,8 +194,8 @@ function normalizeItem(rawItem: any): ItemType {
   };
 }
 
+/* styles in lowercase */
 const styles = StyleSheet.create({
-  // comments in lowercase
   mainContainer: {
     flex: 1,
     backgroundColor: colors.yuck,

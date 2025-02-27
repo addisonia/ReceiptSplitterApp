@@ -23,10 +23,10 @@ import { useNavigation } from "@react-navigation/native";
 import { RootStackParamList } from "../types/RootStackParams";
 import { NativeStackNavigationProp } from "@react-navigation/native-stack";
 
-// Define route type
+/* define route type */
 type ChatNavProp = NativeStackNavigationProp<RootStackParamList, "Chat">;
 
-// Define the Firebase shape for each message in the db
+/* define the firebase shape for each message */
 interface FirebaseMessageData {
   senderName?: string;
   text?: string;
@@ -36,7 +36,7 @@ interface FirebaseMessageData {
   receiptData?: any;
 }
 
-// Define your local message type
+/* define your local message type */
 interface Message {
   key: string;
   senderName: string;
@@ -54,7 +54,7 @@ interface GroupChatData {
   participants: Record<string, boolean>;
 }
 
-// Define ReceiptData type for navigation to Split page (consistent with Split.tsx)
+/* define the shape for receipt data, if applicable */
 type ReceiptData = {
   name: string;
   items: ItemType[];
@@ -75,21 +75,6 @@ type BuyerType = {
   selected: boolean[];
 };
 
-// Define the expected raw receipt data structure from the database
-interface RawReceiptData {
-  buyers?: { name: string; selected?: boolean[] }[];
-  items?: {
-    item?: string;
-    price?: number;
-    quantity?: number;
-    buyers?: { name: string; selected?: boolean[] }[];
-  }[];
-  tax?: number;
-  time_and_date?: string;
-  date?: string;
-}
-
-// Helper to normalize a buyer (from importreceipts.tsx)
 function normalizeBuyer(rawBuyer: any): BuyerType {
   if (typeof rawBuyer === "string") {
     return { name: rawBuyer, selected: [] };
@@ -109,7 +94,6 @@ function normalizeBuyer(rawBuyer: any): BuyerType {
   return { name: "UnknownBuyer", selected: [] };
 }
 
-// Helper to normalize an item (from importreceipts.tsx)
 function normalizeItem(rawItem: any): ItemType {
   let iName = "";
   if (typeof rawItem.item === "string") {
@@ -127,6 +111,7 @@ function normalizeItem(rawItem: any): ItemType {
     typeof rawItem.quantity === "number" && rawItem.quantity > 0
       ? rawItem.quantity
       : 1;
+
   let itemBuyers: BuyerType[] = [];
   if (Array.isArray(rawItem.buyers)) {
     itemBuyers = rawItem.buyers.map(normalizeBuyer);
@@ -135,9 +120,8 @@ function normalizeItem(rawItem: any): ItemType {
       name: nameStr,
       selected: Array(qty).fill(true),
     }));
-  } else {
-    itemBuyers = [];
   }
+
   return {
     item: iName,
     price: priceNum,
@@ -146,22 +130,21 @@ function normalizeItem(rawItem: any): ItemType {
   };
 }
 
-// Helper to normalize a receipt object (from importreceipts.tsx)
 function normalizeReceiptData(receiptKey: string, rawData: any): ReceiptData {
-  const t =
-    typeof rawData.time_and_date === "string" ? rawData.time_and_date : "";
+  const t = typeof rawData.time_and_date === "string" ? rawData.time_and_date : "";
   let topBuyers: BuyerType[] = [];
   if (Array.isArray(rawData.buyers)) {
     topBuyers = rawData.buyers.map(normalizeBuyer);
-  } else {
-    topBuyers = [];
   }
+
   const rawItems = Array.isArray(rawData.items) ? rawData.items : [];
   const items: ItemType[] = rawItems.map(normalizeItem);
+
   let theTax = 0;
   if (typeof rawData.tax === "number" && !isNaN(rawData.tax)) {
     theTax = rawData.tax;
   }
+
   return {
     name: receiptKey,
     items,
@@ -174,48 +157,79 @@ function normalizeReceiptData(receiptKey: string, rawData: any): ReceiptData {
 const Chat = () => {
   const navigation = useNavigation<ChatNavProp>();
 
-  const [username, setUsername] = useState<string | null>(null);
   const [user, setUser] = useState<User | null>(null);
-  const [messages, setMessages] = useState<Message[]>([]);
-  const [newMessageText, setNewMessageText] = useState("");
+  const [username, setUsername] = useState<string | null>(null);
   const [isSignedIn, setIsSignedIn] = useState(false);
-  const [selectedChat, setSelectedChat] = useState<string>("global");
-  const [groupChatsMap, setGroupChatsMap] = useState<
-    Record<string, GroupChatData>
-  >({});
+
+  /* tracking messages and group selection */
+  const [messages, setMessages] = useState<Message[]>([]);
+  const [selectedChat, setSelectedChat] = useState("global");
+  const [groupChatsMap, setGroupChatsMap] = useState<Record<string, GroupChatData>>({});
   const [groupChatArray, setGroupChatArray] = useState<GroupChatData[]>([]);
-  const [longPressedMessage, setLongPressedMessage] = useState<Message | null>(
-    null
-  );
-  const [dropdownOpen, setDropdownOpen] = useState(false);
-  const [expandedMessages, setExpandedMessages] = useState<
-    Record<string, boolean>
-  >({});
+
+  const [newMessageText, setNewMessageText] = useState("");
+  const [expandedMessages, setExpandedMessages] = useState<Record<string, boolean>>({});
+
+  /* friend-related state */
+  const [myFriends, setMyFriends] = useState<Record<string, string>>({});
+  const [outgoingRequests, setOutgoingRequests] = useState<Set<string>>(new Set());
+
+  /* popup menu */
   const [popupVisible, setPopupVisible] = useState(false);
   const [popupX, setPopupX] = useState(0);
   const [popupY, setPopupY] = useState(0);
   const [popupTargetUid, setPopupTargetUid] = useState<string | null>(null);
   const [popupTargetName, setPopupTargetName] = useState<string | null>(null);
   const [isTargetFriend, setIsTargetFriend] = useState(false);
-  const [myFriends, setMyFriends] = useState<Record<string, string>>({});
-  const [outgoingRequests, setOutgoingRequests] = useState<Set<string>>(
-    new Set()
-  );
-  const [participantUsernames, setParticipantUsernames] = useState<string[]>(
-    []
-  );
+  const [longPressedMessage, setLongPressedMessage] = useState<Message | null>(null);
 
+  /* group participants (for the group header list) */
+  const [participantUsernames, setParticipantUsernames] = useState<string[]>([]);
+  const [dropdownOpen, setDropdownOpen] = useState(false);
+
+  /* color palette for other users */
+  const userColors = [
+    "#c177d9", // Lavender Purple
+    "#77d997", // Mint Green
+    "#d97777", // Soft Red
+    "#d9d177", // Pale Yellow
+    "#77b7d9", // Sky Blue
+    "#a477d9", // Medium Purple
+    "#d9a477", // Peach
+    "#9afbfc", // Aqua
+    "#ff9a76", // Coral
+    "#baff66", // Lime Green
+    "#ff66dc", // Hot Pink
+    "#66ffed", // Turquoise
+    "#ffee66", // Bright Yellow
+    "#ff6666", // Bright Red
+    "#66c7ff", // Electric Blue
+    "#d966ff", // Vibrant Purple
+    "#ffb266", // Orange
+    "#66ff8c", // Neon Green
+    "#ff66a3", // Pink
+    "#c4ff66"  // Chartreuse
+  ];
+
+  /* state for user->color map */
+  const [assignedColors, setAssignedColors] = useState<{ [name: string]: string }>({});
+
+  /* watch auth changes */
   useEffect(() => {
     const unsubscribeAuth = onAuthStateChanged(auth, (currentUser) => {
       setUser(currentUser);
       if (currentUser) {
         setIsSignedIn(true);
         fetchChatUsernameFromDB(currentUser.uid);
+
+        /* read user’s friends list */
         const friendsRef = ref(database, `users/${currentUser.uid}/friends`);
         onValue(friendsRef, (snap) => {
           const data = snap.val() || {};
           setMyFriends(data);
         });
+
+        /* read user’s outgoing friend requests */
         const outRef = ref(database, `outgoingRequests/${currentUser.uid}`);
         onValue(outRef, (snap) => {
           if (!snap.exists()) {
@@ -224,6 +238,8 @@ const Chat = () => {
             setOutgoingRequests(new Set(Object.keys(snap.val())));
           }
         });
+
+        /* load the user’s group chats */
         loadUserGroups(currentUser.uid);
       } else {
         setIsSignedIn(false);
@@ -251,6 +267,7 @@ const Chat = () => {
       const groupIdsObj = snapshot.val() || {};
       const groupIds = Object.keys(groupIdsObj);
       const newMap: Record<string, GroupChatData> = {};
+
       groupIds.forEach((gid) => {
         const singleGroupRef = ref(database, `groupChats/${gid}`);
         onValue(singleGroupRef, (snap) => {
@@ -266,6 +283,7 @@ const Chat = () => {
           }
           setGroupChatsMap((prev) => {
             const merged = { ...prev, ...newMap };
+            /* remove old groups if no longer in user’s list */
             for (const k of Object.keys(merged)) {
               if (!groupIds.includes(k)) {
                 delete merged[k];
@@ -277,6 +295,7 @@ const Chat = () => {
           });
         });
       });
+
       if (groupIds.length === 0) {
         setGroupChatsMap({});
         setGroupChatArray([]);
@@ -284,38 +303,17 @@ const Chat = () => {
     });
   };
 
-  useEffect(() => {
-    if (selectedChat === "global") {
-      setParticipantUsernames([]);
-      return;
-    }
-    const groupData = groupChatsMap[selectedChat];
-    if (!groupData) {
-      setParticipantUsernames([]);
-      return;
-    }
-    const participantUids = Object.keys(groupData.participants || {});
-    const promises = participantUids.map(async (uid) => {
-      const snap = await get(child(ref(database), `users/${uid}/username`));
-      if (snap.exists()) {
-        return snap.val() as string;
-      } else {
-        return "Unknown";
-      }
-    });
-    Promise.all(promises).then((names) => {
-      setParticipantUsernames(names);
-    });
-  }, [selectedChat, groupChatsMap]);
-
+  /* watch the messages for the selected chat */
   useEffect(() => {
     if (!isSignedIn) return;
     let unsubscribe: () => void;
+
     if (selectedChat === "global") {
       const messagesRef = ref(database, "chat/messages");
       unsubscribe = onValue(messagesRef, (snapshot) => {
         const data = snapshot.val();
         const messagesArray: Message[] = [];
+
         if (data) {
           Object.entries(data).forEach(([_, userMessages]) => {
             if (typeof userMessages === "object" && userMessages !== null) {
@@ -340,13 +338,11 @@ const Chat = () => {
         }
       });
     } else {
-      const groupMessagesRef = ref(
-        database,
-        `groupChats/${selectedChat}/messages`
-      );
+      const groupMessagesRef = ref(database, `groupChats/${selectedChat}/messages`);
       unsubscribe = onValue(groupMessagesRef, (snapshot) => {
         const data = snapshot.val();
         const messagesArray: Message[] = [];
+
         if (data) {
           Object.entries(data).forEach(([msgId, raw]) => {
             const msgData = raw as FirebaseMessageData;
@@ -372,6 +368,45 @@ const Chat = () => {
     };
   }, [isSignedIn, selectedChat]);
 
+  /* whenever 'selectedChat' changes, load participant names (for group) */
+  useEffect(() => {
+    if (selectedChat === "global") {
+      setParticipantUsernames([]);
+      return;
+    }
+    const groupData = groupChatsMap[selectedChat];
+    if (!groupData) {
+      setParticipantUsernames([]);
+      return;
+    }
+    const participantUids = Object.keys(groupData.participants || {});
+    const promises = participantUids.map(async (uid) => {
+      const snap = await get(child(ref(database), `users/${uid}/username`));
+      return snap.exists() ? snap.val() : "Unknown";
+    });
+    Promise.all(promises).then((names) => {
+      setParticipantUsernames(names);
+    });
+  }, [selectedChat, groupChatsMap]);
+
+  /* assign colors to unique senders */
+  useEffect(() => {
+    const uniqueNames = Array.from(new Set(messages.map((m) => m.senderName)));
+    const updatedMap = { ...assignedColors };
+
+    let colorCount = Object.keys(updatedMap).length;
+    uniqueNames.forEach((name) => {
+      if (!updatedMap[name]) {
+        updatedMap[name] = userColors[colorCount % userColors.length];
+        colorCount++;
+      }
+    });
+
+    if (Object.keys(updatedMap).length !== Object.keys(assignedColors).length) {
+      setAssignedColors(updatedMap);
+    }
+  }, [messages, assignedColors, userColors]);
+
   const handleSendMessage = () => {
     if (!isSignedIn) {
       alert("Sign in to send messages.");
@@ -392,14 +427,9 @@ const Chat = () => {
         timestamp: Date.now(),
         senderUid: user?.uid || "unknown-uid",
       };
-      set(newMessageRef, messagePayload)
-        .then(() => setNewMessageText(""))
-        .catch((error) => console.error("Error sending message:", error));
+      set(newMessageRef, messagePayload).then(() => setNewMessageText(""));
     } else {
-      const groupMessagesRef = ref(
-        database,
-        `groupChats/${selectedChat}/messages`
-      );
+      const groupMessagesRef = ref(database, `groupChats/${selectedChat}/messages`);
       const newGroupMsgRef = push(groupMessagesRef);
       const messagePayload = {
         text: newMessageText.trim(),
@@ -407,9 +437,7 @@ const Chat = () => {
         timestamp: Date.now(),
         senderUid: user?.uid || "unknown-uid",
       };
-      set(newGroupMsgRef, messagePayload)
-        .then(() => setNewMessageText(""))
-        .catch((error) => console.error("Error sending group message:", error));
+      set(newGroupMsgRef, messagePayload).then(() => setNewMessageText(""));
     }
   };
 
@@ -458,10 +486,7 @@ const Chat = () => {
       fromUid: myUid,
       fromUsername: localName,
     });
-    await set(
-      ref(database, `outgoingRequests/${myUid}/${popupTargetUid}`),
-      true
-    );
+    await set(ref(database, `outgoingRequests/${myUid}/${popupTargetUid}`), true);
     setPopupVisible(false);
     Alert.alert("Friend request sent", `Sent to ${popupTargetName}.`);
   };
@@ -517,15 +542,8 @@ const Chat = () => {
           style: "destructive",
           onPress: async () => {
             try {
-              await remove(
-                ref(
-                  database,
-                  `groupChats/${selectedChat}/participants/${user.uid}`
-                )
-              );
-              await remove(
-                ref(database, `users/${user.uid}/groups/${selectedChat}`)
-              );
+              await remove(ref(database, `groupChats/${selectedChat}/participants/${user.uid}`));
+              await remove(ref(database, `users/${user.uid}/groups/${selectedChat}`));
               setSelectedChat("global");
             } catch (err) {
               console.error("Error leaving group:", err);
@@ -545,16 +563,14 @@ const Chat = () => {
   };
 
   const handleUploadReceipt = () => {
-    navigation.navigate("UploadReceipt", { groupId: selectedChat });
+    // pass the local username to the UploadReceipt screen
+    navigation.navigate("UploadReceipt", { groupId: selectedChat, myUsername: username });
   };
 
   const handleImportReceipt = async () => {
-    if (
-      !longPressedMessage ||
-      !longPressedMessage.receiptData ||
-      !longPressedMessage.senderUid
-    )
+    if (!longPressedMessage || !longPressedMessage.receiptData || !longPressedMessage.senderUid) {
       return;
+    }
     setPopupVisible(false);
 
     const receiptName = longPressedMessage.receiptData.name;
@@ -570,7 +586,6 @@ const Chat = () => {
       const snapshot = await get(receiptRef);
       if (snapshot.exists()) {
         const receiptData = normalizeReceiptData(receiptName, snapshot.val());
-        console.log("Imported Receipt Data:", receiptData); // Debug log
         navigation.reset({
           index: 0,
           routes: [
@@ -595,17 +610,20 @@ const Chat = () => {
     }
   };
 
-  const renderSignInMessage = () => (
-    <View style={styles.signInMessageContainer}>
-      <ChatSkeleton />
-    </View>
-  );
-
   const currentChatName =
     selectedChat === "global"
       ? "Global Chat"
       : groupChatsMap[selectedChat]?.name || "Unknown Group";
 
+  if (!isSignedIn) {
+    return (
+      <View style={styles.signInMessageContainer}>
+        <ChatSkeleton />
+      </View>
+    );
+  }
+
+  /* render a single message item */
   const MessageItem = React.memo(({ item }: { item: Message }) => {
     const isCurrentUserMessage = user ? item.senderUid === user.uid : false;
     const isExpanded = expandedMessages[item.key] || false;
@@ -614,7 +632,9 @@ const Chat = () => {
       return (
         <TouchableOpacity
           activeOpacity={0.9}
-          onPress={() => handleBubblePress(item.key)}
+          onPress={() => {
+            setExpandedMessages((prev) => ({ ...prev, [item.key]: !prev[item.key] }));
+          }}
           onLongPress={(e) => {
             const { pageX, pageY } = e.nativeEvent;
             handleBubbleLongPress(
@@ -630,9 +650,7 @@ const Chat = () => {
             styles.messageBubble,
             styles.receiptBubble,
             { maxWidth: "95%" },
-            isCurrentUserMessage
-              ? styles.currentUserReceipt
-              : styles.otherUserReceipt,
+            isCurrentUserMessage ? styles.currentUserReceipt : styles.otherUserReceipt,
           ]}
         >
           <Text
@@ -640,8 +658,7 @@ const Chat = () => {
               styles.senderName,
               isCurrentUserMessage
                 ? styles.currentUserSenderName
-                : styles.otherUserSenderName,
-              { color: "lightgray" },
+                : { color: assignedColors[item.senderName] || "#fff" },
             ]}
           >
             {item.senderName} uploaded a receipt
@@ -649,7 +666,6 @@ const Chat = () => {
           <Text style={styles.receiptTitle}>
             {item.receiptData.name || "Unnamed Receipt"}
           </Text>
-
           {isExpanded && (
             <>
               <Text style={styles.receiptDate}>
@@ -667,9 +683,14 @@ const Chat = () => {
                     const price = rItem.price || 0;
                     const qty = rItem.quantity || 1;
                     const itemTotal = price * qty;
-                    const buyerNames = (rItem.buyers || [])
-                      .map((b: any) => b.name)
-                      .join(", ");
+                    // filter only those buyers who have at least one 'true' in 'selected'
+                    const filteredBuyers = (rItem.buyers || []).filter(
+                      (b: any) =>
+                        Array.isArray(b.selected) &&
+                        b.selected.some((val: boolean) => val)
+                    );
+                    const buyerNames = filteredBuyers.map((b: any) => b.name).join(", ");
+
                     return (
                       <View key={index} style={styles.receiptItemRow}>
                         <Text style={styles.receiptItemText}>
@@ -692,11 +713,8 @@ const Chat = () => {
       );
     }
 
-    const timestampStyle = isCurrentUserMessage
-      ? styles.selfTimestamp
-      : styles.timestamp;
+    /* normal text messages */
     const isExpandedText = expandedMessages[item.key] || false;
-
     return (
       <TouchableOpacity
         activeOpacity={0.9}
@@ -715,9 +733,7 @@ const Chat = () => {
         style={[
           styles.messageBubble,
           { maxWidth: "80%" },
-          isCurrentUserMessage
-            ? styles.currentUserMessage
-            : styles.otherUserMessage,
+          isCurrentUserMessage ? styles.currentUserMessage : styles.otherUserMessage,
         ]}
       >
         <Text
@@ -725,7 +741,7 @@ const Chat = () => {
             styles.senderName,
             isCurrentUserMessage
               ? styles.currentUserSenderName
-              : styles.otherUserSenderName,
+              : { color: assignedColors[item.senderName] || "#fff" },
           ]}
         >
           {item.senderName}:
@@ -733,15 +749,17 @@ const Chat = () => {
         <Text
           style={[
             styles.messageText,
-            isCurrentUserMessage
-              ? styles.currentUserText
-              : styles.otherUserText,
+            isCurrentUserMessage ? styles.currentUserText : styles.otherUserText,
           ]}
         >
           {item.text}
         </Text>
         {isExpandedText && (
-          <Text style={timestampStyle}>
+          <Text
+            style={
+              isCurrentUserMessage ? styles.selfTimestamp : styles.timestamp
+            }
+          >
             {new Date(item.timestamp).toLocaleString()}
           </Text>
         )}
@@ -751,71 +769,53 @@ const Chat = () => {
 
   return (
     <View style={styles.container}>
+      {/* header */}
       <View style={styles.headerContainer}>
-        {isSignedIn && (
-          <TouchableOpacity onPress={() => navigation.navigate("Profile")}>
+        <TouchableOpacity onPress={() => navigation.navigate("Profile")}>
+          <FontAwesome
+            name="users"
+            size={26}
+            color={colors.yellow}
+            style={styles.icon}
+          />
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={styles.headerTitleWrapper}
+          onPress={() => setDropdownOpen(true)}
+        >
+          <Text style={styles.headerText}>{currentChatName}</Text>
+          <FontAwesome
+            name="chevron-down"
+            size={16}
+            color={colors.yellow}
+            style={{ marginLeft: 5 }}
+          />
+        </TouchableOpacity>
+
+        <TouchableOpacity onPress={handleTopRightIconPress}>
+          {selectedChat !== "global" ? (
+            <FontAwesome name="minus" size={26} color="red" style={styles.icon} />
+          ) : (
             <FontAwesome
-              name="users"
+              name="plus"
               size={26}
               color={colors.yellow}
               style={styles.icon}
             />
-          </TouchableOpacity>
-        )}
-        {isSignedIn ? (
-          <TouchableOpacity
-            style={styles.headerTitleWrapper}
-            onPress={() => setDropdownOpen(true)}
-          >
-            <Text style={styles.headerText}>{currentChatName}</Text>
-            <FontAwesome
-              name="chevron-down"
-              size={16}
-              color={colors.yellow}
-              style={{ marginLeft: 5 }}
-            />
-          </TouchableOpacity>
-        ) : (
-          <View style={{ flex: 1 }}>
-            <Text
-              style={[
-                styles.headerText,
-                { textAlign: "center", marginTop: 10 },
-              ]}
-            >
-              You're missing out...
-            </Text>
-          </View>
-        )}
-        {isSignedIn && (
-          <TouchableOpacity onPress={handleTopRightIconPress}>
-            {selectedChat !== "global" ? (
-              <FontAwesome
-                name="minus"
-                size={26}
-                color="red"
-                style={styles.icon}
-              />
-            ) : (
-              <FontAwesome
-                name="plus"
-                size={26}
-                color={colors.yellow}
-                style={styles.icon}
-              />
-            )}
-          </TouchableOpacity>
-        )}
+          )}
+        </TouchableOpacity>
       </View>
-      {isSignedIn &&
-        selectedChat !== "global" &&
-        participantUsernames.length > 0 && (
-          <View style={styles.participantList}>
-            <Text style={styles.participantText}>
-              {participantUsernames.join(", ")}
-            </Text>
-          </View>
-        )}
+
+      {selectedChat !== "global" && participantUsernames.length > 0 && (
+        <View style={styles.participantList}>
+          <Text style={styles.participantText}>
+            {participantUsernames.join(", ")}
+          </Text>
+        </View>
+      )}
+
+      {/* chat dropdown */}
       <Modal
         transparent
         visible={dropdownOpen}
@@ -856,58 +856,46 @@ const Chat = () => {
                   setDropdownOpen(false);
                 }}
               >
-                <FontAwesome
-                  name="users"
-                  size={16}
-                  color="#fff"
-                  style={styles.dropdownIcon}
-                />
+                <FontAwesome name="users" size={16} color="#fff" style={styles.dropdownIcon} />
                 <Text style={styles.dropdownItemText}>{g.name}</Text>
               </TouchableOpacity>
             ))}
           </View>
         </View>
       </Modal>
-      {isSignedIn ? (
-        <>
-          <FlatList
-            data={messages}
-            renderItem={({ item }) => <MessageItem item={item} />}
-            keyExtractor={(item) => item.key}
-            contentContainerStyle={styles.messagesContainer}
-            removeClippedSubviews
-            windowSize={5}
-          />
-          <View style={styles.inputArea}>
-            {selectedChat !== "global" && (
-              <TouchableOpacity
-                onPress={handleUploadReceipt}
-                style={styles.receiptIcon}
-              >
-                <FontAwesome
-                  name="file-text-o"
-                  size={24}
-                  color={colors.yellow}
-                />
-              </TouchableOpacity>
-            )}
-            <TextInput
-              style={styles.input}
-              placeholder="Type a message..."
-              placeholderTextColor="#ccc"
-              value={newMessageText}
-              onChangeText={setNewMessageText}
-              onSubmitEditing={handleSendMessage}
-              returnKeyType="send"
-            />
-            <Pressable style={styles.sendButton} onPress={handleSendMessage}>
-              <Text style={styles.sendButtonText}>Send</Text>
-            </Pressable>
-          </View>
-        </>
-      ) : (
-        renderSignInMessage()
-      )}
+
+      {/* message list */}
+      <FlatList
+        data={messages}
+        renderItem={({ item }) => <MessageItem item={item} />}
+        keyExtractor={(item) => item.key}
+        contentContainerStyle={styles.messagesContainer}
+        removeClippedSubviews
+        windowSize={5}
+      />
+
+      {/* input row */}
+      <View style={styles.inputArea}>
+        {selectedChat !== "global" && (
+          <TouchableOpacity onPress={handleUploadReceipt} style={styles.receiptIcon}>
+            <FontAwesome name="file-text-o" size={24} color={colors.yellow} />
+          </TouchableOpacity>
+        )}
+        <TextInput
+          style={styles.input}
+          placeholder="Type a message..."
+          placeholderTextColor="#ccc"
+          value={newMessageText}
+          onChangeText={setNewMessageText}
+          onSubmitEditing={handleSendMessage}
+          returnKeyType="send"
+        />
+        <Pressable style={styles.sendButton} onPress={handleSendMessage}>
+          <Text style={styles.sendButtonText}>Send</Text>
+        </Pressable>
+      </View>
+
+      {/* popup menu */}
       <Modal visible={popupVisible} transparent animationType="fade">
         <TouchableWithoutFeedback onPress={() => setPopupVisible(false)}>
           <View style={styles.modalOverlay} />
@@ -923,34 +911,27 @@ const Chat = () => {
             ]}
           >
             {isTargetFriend ? (
-              <TouchableOpacity
-                onPress={confirmRemoveFriend}
-                style={styles.popupItem}
-              >
+              <TouchableOpacity onPress={confirmRemoveFriend} style={styles.popupItem}>
                 <Text style={[styles.popupText, { color: "red" }]}>
                   Remove Friend
                 </Text>
               </TouchableOpacity>
             ) : (
-              <TouchableOpacity
-                onPress={handleAddFriend}
-                style={styles.popupItem}
-              >
+              <TouchableOpacity onPress={handleAddFriend} style={styles.popupItem}>
                 <Text style={styles.popupText}>Add Friend</Text>
               </TouchableOpacity>
             )}
             <TouchableOpacity onPress={handleMessage} style={styles.popupItem}>
               <Text style={styles.popupText}>Message</Text>
             </TouchableOpacity>
-            {selectedChat !== "global" &&
-              longPressedMessage?.type === "receipt" && (
-                <TouchableOpacity
-                  onPress={handleImportReceipt}
-                  style={styles.popupItem}
-                >
-                  <Text style={styles.popupText}>Import Receipt</Text>
-                </TouchableOpacity>
-              )}
+            {selectedChat !== "global" && longPressedMessage?.type === "receipt" && (
+              <TouchableOpacity
+                onPress={handleImportReceipt}
+                style={styles.popupItem}
+              >
+                <Text style={styles.popupText}>Import Receipt</Text>
+              </TouchableOpacity>
+            )}
           </View>
         )}
       </Modal>
@@ -960,6 +941,7 @@ const Chat = () => {
 
 export default Chat;
 
+/* styles in lowercase */
 const styles = StyleSheet.create({
   container: {
     flex: 1,
@@ -1020,13 +1002,9 @@ const styles = StyleSheet.create({
   senderName: {
     fontWeight: "bold",
     marginBottom: 3,
-    color: colors.yellow,
   },
   currentUserSenderName: {
     color: "black",
-  },
-  otherUserSenderName: {
-    color: colors.yellow,
   },
   messageText: {
     fontSize: 16,
@@ -1080,10 +1058,9 @@ const styles = StyleSheet.create({
     fontWeight: "bold",
     fontSize: 16,
   },
-  // Add these to your existing styles object
   modalOverlay: {
     flex: 1,
-    backgroundColor: "rgba(0, 0, 0, 0.5)", // Semi-transparent background
+    backgroundColor: "rgba(0, 0, 0, 0.5)",
   },
   dropdownPanel: {
     position: "absolute",
@@ -1094,7 +1071,7 @@ const styles = StyleSheet.create({
   },
   dropdownContainer: {
     width: "80%",
-    backgroundColor: "#114B68", // Darker background that matches your theme
+    backgroundColor: "#114B68",
     borderRadius: 12,
     paddingVertical: 8,
     shadowColor: "#000",
@@ -1118,12 +1095,12 @@ const styles = StyleSheet.create({
     fontWeight: "500",
   },
   globalChatItem: {
-    backgroundColor: "rgba(243, 210, 90, 0.15)", // Slight yellow tint for global chat
+    backgroundColor: "rgba(243, 210, 90, 0.15)",
     borderRadius: 8,
     marginHorizontal: 8,
   },
   globalChatText: {
-    color: colors.yellow, // Yellow text for global chat
+    color: colors.yellow,
     fontWeight: "bold",
   },
   dropdownIcon: {
