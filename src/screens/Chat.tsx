@@ -828,14 +828,25 @@ const Chat = () => {
         <View style={styles.dropdownPanel}>
           <View style={styles.dropdownContainer}>
             <TouchableOpacity
-              style={styles.dropdownItem}
+              style={[styles.dropdownItem, styles.globalChatItem]}
               onPress={() => {
                 setSelectedChat("global");
                 setDropdownOpen(false);
               }}
             >
-              <Text style={styles.dropdownItemText}>Global Chat</Text>
+              <FontAwesome
+                name="globe"
+                size={16}
+                color={colors.yellow}
+                style={styles.dropdownIcon}
+              />
+              <Text style={[styles.dropdownItemText, styles.globalChatText]}>
+                Global Chat
+              </Text>
             </TouchableOpacity>
+
+            {groupChatArray.length > 0 && <View style={styles.divider} />}
+
             {groupChatArray.map((g) => (
               <TouchableOpacity
                 key={g.id}
@@ -845,6 +856,12 @@ const Chat = () => {
                   setDropdownOpen(false);
                 }}
               >
+                <FontAwesome
+                  name="users"
+                  size={16}
+                  color="#fff"
+                  style={styles.dropdownIcon}
+                />
                 <Text style={styles.dropdownItemText}>{g.name}</Text>
               </TouchableOpacity>
             ))}
@@ -1063,34 +1080,60 @@ const styles = StyleSheet.create({
     fontWeight: "bold",
     fontSize: 16,
   },
+  // Add these to your existing styles object
   modalOverlay: {
     flex: 1,
-    backgroundColor: "transparent",
+    backgroundColor: "rgba(0, 0, 0, 0.5)", // Semi-transparent background
   },
   dropdownPanel: {
     position: "absolute",
     top: 70,
     left: 0,
     right: 0,
+    alignItems: "center",
   },
   dropdownContainer: {
-    marginHorizontal: 20,
-    backgroundColor: "#193f54",
-    borderRadius: 6,
-    paddingVertical: 5,
+    width: "80%",
+    backgroundColor: "#114B68", // Darker background that matches your theme
+    borderRadius: 12,
+    paddingVertical: 8,
     shadowColor: "#000",
-    shadowOffset: { width: 0, height: 3 },
-    shadowOpacity: 0.4,
-    shadowRadius: 4,
-    elevation: 5,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 6,
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.1)",
   },
   dropdownItem: {
-    paddingHorizontal: 15,
-    paddingVertical: 10,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    flexDirection: "row",
+    alignItems: "center",
+    marginVertical: 2,
   },
   dropdownItemText: {
     color: "#fff",
     fontSize: 16,
+    fontWeight: "500",
+  },
+  globalChatItem: {
+    backgroundColor: "rgba(243, 210, 90, 0.15)", // Slight yellow tint for global chat
+    borderRadius: 8,
+    marginHorizontal: 8,
+  },
+  globalChatText: {
+    color: colors.yellow, // Yellow text for global chat
+    fontWeight: "bold",
+  },
+  dropdownIcon: {
+    marginRight: 12,
+  },
+  divider: {
+    height: 1,
+    backgroundColor: "rgba(255, 255, 255, 0.1)",
+    marginVertical: 8,
+    marginHorizontal: 12,
   },
   signInMessageContainer: {
     flex: 1,
