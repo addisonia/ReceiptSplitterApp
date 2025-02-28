@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { ScrollView, Text, StyleSheet, Pressable, View } from "react-native";
+import { ScrollView, Text, StyleSheet, StatusBar, Pressable, View } from "react-native";
 import { useNavigation } from "@react-navigation/native";
 import { auth, database } from "../firebase";
 import { ref, onValue } from "firebase/database";
@@ -114,31 +114,31 @@ export default function ImportReceipts() {
   const [receipts, setReceipts] = useState<ReceiptData[]>([]);
   const [backIconColor, setBackIconColor] = useState(colors.yellow);
 
-// importreceipts.tsx - Update the useEffect
-useEffect(() => {
-  if (!auth.currentUser) return;
-  const userId = auth.currentUser.uid;
-  const receiptsRef = ref(database, `receipts/${userId}`);
+  // importreceipts.tsx - Update the useEffect
+  useEffect(() => {
+    if (!auth.currentUser) return;
+    const userId = auth.currentUser.uid;
+    const receiptsRef = ref(database, `receipts/${userId}`);
 
-  const unsubscribe = onValue(receiptsRef, (snapshot) => {
-    if (!snapshot.exists()) {
-      setReceipts([]);
-      return;
-    }
-    const data = snapshot.val() || {};
-    const loaded = Object.keys(data).map((key) =>
-      normalizeReceiptData(key, data[key])
-    );
-    loaded.sort(
-      (a, b) =>
-        new Date(b.time_and_date).getTime() -
-        new Date(a.time_and_date).getTime()
-    );
-    setReceipts(loaded);
-  });
+    const unsubscribe = onValue(receiptsRef, (snapshot) => {
+      if (!snapshot.exists()) {
+        setReceipts([]);
+        return;
+      }
+      const data = snapshot.val() || {};
+      const loaded = Object.keys(data).map((key) =>
+        normalizeReceiptData(key, data[key])
+      );
+      loaded.sort(
+        (a, b) =>
+          new Date(b.time_and_date).getTime() -
+          new Date(a.time_and_date).getTime()
+      );
+      setReceipts(loaded);
+    });
 
-  return () => unsubscribe();
-}, []);
+    return () => unsubscribe();
+  }, []);
 
   function handleSelectReceipt(receipt: ReceiptData) {
     navigation.navigate("MainTabs", {
@@ -155,15 +155,15 @@ useEffect(() => {
   // calculate total cost for a receipt
   function calculateTotal(receipt: ReceiptData) {
     return (
-      receipt.items.reduce(
-        (sum, item) => sum + item.price * item.quantity,
-        0
-      ) + (receipt.tax || 0)
+      receipt.items.reduce((sum, item) => sum + item.price * item.quantity, 0) +
+      (receipt.tax || 0)
     );
   }
 
   return (
     <View style={styles.mainContainer}>
+      <StatusBar barStyle="light-content" backgroundColor={colors.yuck} />
+
       <View style={styles.topBar}>
         <Pressable
           onPress={handleBack}

@@ -5,6 +5,7 @@ import {
   StyleSheet,
   TouchableOpacity,
   ScrollView,
+  StatusBar,
   Dimensions,
   ActivityIndicator,
   Animated,
@@ -31,48 +32,50 @@ const Receipts = () => {
   const [editMode, setEditMode] = useState(false);
   const [editIconColor, setEditIconColor] = useState(colors.yellow);
 
-  // state to track global expansion of all cards
-  const [globalExpanded, setGlobalExpanded] = useState(false);
+  // state to track which receipts are expanded
+  // key is receipt name, value is boolean (true = expanded)
+  const [expandedReceipts, setExpandedReceipts] = useState<{
+    [key: string]: boolean;
+  }>({});
 
   const user = auth.currentUser;
 
-// receipts.tsx - Update the useEffect fetch logic
-useEffect(() => {
-  let isMounted = true;
-  const fetchReceipts = async () => {
-    if (!user) {
-      setLoading(false);
-      return;
-    }
-    try {
-      const db = getDatabase();
-      // CORRECT PATH: Access receipts/USER_UID directly
-      const userReceiptsRef = ref(db, `receipts/${user.uid}`);
-      const snapshot = await get(userReceiptsRef);
-
-      if (!isMounted) return;
-      if (snapshot.exists()) {
-        setReceipts(snapshot.val());
-      } else {
-        setReceipts(null);
+  // receipts.tsx - update the useeffect fetch logic
+  useEffect(() => {
+    let isMounted = true;
+    const fetchReceipts = async () => {
+      if (!user) {
+        setLoading(false);
+        return;
       }
-    } catch (error) {
-      console.error("Error fetching receipts:", error);
-    } finally {
-      if (isMounted) setLoading(false);
-    }
-  };
+      try {
+        const db = getDatabase();
+        const userReceiptsRef = ref(db, `receipts/${user.uid}`);
+        const snapshot = await get(userReceiptsRef);
 
-  fetchReceipts();
-  return () => {
-    isMounted = false;
-  };
-}, [user]);
+        if (!isMounted) return;
+        if (snapshot.exists()) {
+          setReceipts(snapshot.val());
+        } else {
+          setReceipts(null);
+        }
+      } catch (error) {
+        console.error("error fetching receipts:", error);
+      } finally {
+        if (isMounted) setLoading(false);
+      }
+    };
+
+    fetchReceipts();
+    return () => {
+      isMounted = false;
+    };
+  }, [user]);
 
   // navigate home
   const goHome = () => {
     setHomeIconColor(colors.green);
-    navigation.navigate("MainTabs", { screen: "Home" }); // Navigate to 'Home' tab
+    navigation.navigate("MainTabs", { screen: "Home" });
   };
 
   // toggle edit mode
@@ -80,9 +83,12 @@ useEffect(() => {
     setEditMode((prev) => !prev);
   };
 
-  // toggle global expansion for all receipt cards
-  const toggleGlobalExpand = () => {
-    setGlobalExpanded((prev) => !prev);
+  // toggle expand for a specific receipt
+  const toggleExpand = (receiptName: string) => {
+    setExpandedReceipts((prev) => ({
+      ...prev,
+      [receiptName]: !prev[receiptName],
+    }));
   };
 
   // delete a receipt from the database and update local state
@@ -166,6 +172,8 @@ useEffect(() => {
       }
       const dateString = new Date(receiptData.time_and_date).toLocaleString();
 
+      const isExpanded = !!expandedReceipts[receiptName];
+
       return (
         <View key={receiptName} style={styles.receiptCard}>
           {/* show trash icon in edit mode */}
@@ -175,38 +183,43 @@ useEffect(() => {
           <Text style={styles.receiptTitle}>{receiptName}</Text>
           <Text style={styles.receiptDate}>date: {dateString}</Text>
           <Text style={styles.receiptCost}>total: ${totalCost.toFixed(2)}</Text>
-          {globalExpanded &&
-            receiptData.items &&
-            receiptData.items.length > 0 &&
-            receiptData.items.map((item: any, idx: number) => {
-              // filter buyers that are selected (assumes buyer.selected is an array or boolean)
-              const selectedBuyers = item.buyers
-                ? item.buyers.filter((b: any) =>
-                    Array.isArray(b.selected)
-                      ? b.selected.includes(true)
-                      : b.selected
-                  )
-                : [];
-              return (
-                <View key={idx} style={styles.itemContainer}>
-                  <Text style={styles.itemText}>
-                    {item.item} (x{item.quantity}) - ${item.price.toFixed(2)}
-                  </Text>
-                  {selectedBuyers.length > 0 && (
-                    <Text style={styles.buyersText}>
-                      buyers: {selectedBuyers.map((b: any) => b.name).join(", ")}
+
+          {/* only display items if expanded */}
+          {isExpanded && receiptData.items && receiptData.items.length > 0 && (
+            <>
+              {receiptData.items.map((item: any, idx: number) => {
+                // filter buyers that are selected
+                const selectedBuyers = item.buyers
+                  ? item.buyers.filter((b: any) =>
+                      Array.isArray(b.selected)
+                        ? b.selected.includes(true)
+                        : b.selected
+                    )
+                  : [];
+                return (
+                  <View key={idx} style={styles.itemContainer}>
+                    <Text style={styles.itemText}>
+                      {item.item} (x{item.quantity}) - ${item.price.toFixed(2)}
                     </Text>
-                  )}
-                </View>
-              );
-            })}
-          {/* chevron to toggle global expansion for all cards */}
+                    {selectedBuyers.length > 0 && (
+                      <Text style={styles.buyersText}>
+                        buyers:{" "}
+                        {selectedBuyers.map((b: any) => b.name).join(", ")}
+                      </Text>
+                    )}
+                  </View>
+                );
+              })}
+            </>
+          )}
+
+          {/* chevron to toggle expansion for this receipt */}
           <TouchableOpacity
             style={styles.expandButton}
-            onPress={toggleGlobalExpand}
+            onPress={() => toggleExpand(receiptName)}
           >
             <Icon
-              name={globalExpanded ? "chevron-up" : "chevron-down"}
+              name={isExpanded ? "chevron-up" : "chevron-down"}
               size={20}
               color="#fff"
             />
@@ -218,6 +231,8 @@ useEffect(() => {
 
   return (
     <View style={styles.container}>
+      <StatusBar barStyle="light-content" backgroundColor={colors.yuck} />
+
       {/* top row with home and edit buttons */}
       <View style={styles.topRow}>
         <TouchableOpacity
@@ -265,7 +280,7 @@ const styles = StyleSheet.create({
   topRow: {
     flexDirection: "row",
     alignItems: "center",
-    justifyContent: "space-between", // ensures elements are spaced apart
+    justifyContent: "space-between",
     width: "100%",
     paddingHorizontal: 15,
     paddingVertical: 10,
@@ -342,7 +357,7 @@ const styles = StyleSheet.create({
   trashButton: {
     position: "absolute",
     top: 5,
-    right: 12, // moved trash icon more to the left
+    right: 12,
     zIndex: 1,
   },
 });

@@ -9,6 +9,7 @@ import {
   Pressable,
   TouchableOpacity,
   TouchableWithoutFeedback,
+  StatusBar,
   Modal,
   Dimensions,
   Alert,
@@ -23,7 +24,7 @@ import ChatSkeleton from "../components/ChatSkeleton";
 import { useNavigation } from "@react-navigation/native";
 import { RootStackParamList } from "../types/RootStackParams";
 import { NativeStackNavigationProp } from "@react-navigation/native-stack";
-import Icon from 'react-native-vector-icons/Feather';
+import Icon from "react-native-vector-icons/Feather";
 
 /* define route type */
 type ChatNavProp = NativeStackNavigationProp<RootStackParamList, "Chat">;
@@ -133,7 +134,8 @@ function normalizeItem(rawItem: any): ItemType {
 }
 
 function normalizeReceiptData(receiptKey: string, rawData: any): ReceiptData {
-  const t = typeof rawData.time_and_date === "string" ? rawData.time_and_date : "";
+  const t =
+    typeof rawData.time_and_date === "string" ? rawData.time_and_date : "";
   let topBuyers: BuyerType[] = [];
   if (Array.isArray(rawData.buyers)) {
     topBuyers = rawData.buyers.map(normalizeBuyer);
@@ -166,15 +168,21 @@ const Chat = () => {
   /* tracking messages and group selection */
   const [messages, setMessages] = useState<Message[]>([]);
   const [selectedChat, setSelectedChat] = useState("global");
-  const [groupChatsMap, setGroupChatsMap] = useState<Record<string, GroupChatData>>({});
+  const [groupChatsMap, setGroupChatsMap] = useState<
+    Record<string, GroupChatData>
+  >({});
   const [groupChatArray, setGroupChatArray] = useState<GroupChatData[]>([]);
 
   const [newMessageText, setNewMessageText] = useState("");
-  const [expandedMessages, setExpandedMessages] = useState<Record<string, boolean>>({});
+  const [expandedMessages, setExpandedMessages] = useState<
+    Record<string, boolean>
+  >({});
 
   /* friend-related state */
   const [myFriends, setMyFriends] = useState<Record<string, string>>({});
-  const [outgoingRequests, setOutgoingRequests] = useState<Set<string>>(new Set());
+  const [outgoingRequests, setOutgoingRequests] = useState<Set<string>>(
+    new Set()
+  );
 
   /* popup menu */
   const [popupVisible, setPopupVisible] = useState(false);
@@ -183,10 +191,14 @@ const Chat = () => {
   const [popupTargetUid, setPopupTargetUid] = useState<string | null>(null);
   const [popupTargetName, setPopupTargetName] = useState<string | null>(null);
   const [isTargetFriend, setIsTargetFriend] = useState(false);
-  const [longPressedMessage, setLongPressedMessage] = useState<Message | null>(null);
+  const [longPressedMessage, setLongPressedMessage] = useState<Message | null>(
+    null
+  );
 
   /* group participants (for the group header list) */
-  const [participantUsernames, setParticipantUsernames] = useState<string[]>([]);
+  const [participantUsernames, setParticipantUsernames] = useState<string[]>(
+    []
+  );
   const [dropdownOpen, setDropdownOpen] = useState(false);
 
   /* color palette for other users */
@@ -210,11 +222,13 @@ const Chat = () => {
     "#ffb266", // Orange
     "#66ff8c", // Neon Green
     "#ff66a3", // Pink
-    "#c4ff66"  // Chartreuse
+    "#c4ff66", // Chartreuse
   ];
 
   /* state for user->color map */
-  const [assignedColors, setAssignedColors] = useState<{ [name: string]: string }>({});
+  const [assignedColors, setAssignedColors] = useState<{
+    [name: string]: string;
+  }>({});
 
   /* watch auth changes */
   useEffect(() => {
@@ -340,7 +354,10 @@ const Chat = () => {
         }
       });
     } else {
-      const groupMessagesRef = ref(database, `groupChats/${selectedChat}/messages`);
+      const groupMessagesRef = ref(
+        database,
+        `groupChats/${selectedChat}/messages`
+      );
       unsubscribe = onValue(groupMessagesRef, (snapshot) => {
         const data = snapshot.val();
         const messagesArray: Message[] = [];
@@ -431,7 +448,10 @@ const Chat = () => {
       };
       set(newMessageRef, messagePayload).then(() => setNewMessageText(""));
     } else {
-      const groupMessagesRef = ref(database, `groupChats/${selectedChat}/messages`);
+      const groupMessagesRef = ref(
+        database,
+        `groupChats/${selectedChat}/messages`
+      );
       const newGroupMsgRef = push(groupMessagesRef);
       const messagePayload = {
         text: newMessageText.trim(),
@@ -488,7 +508,10 @@ const Chat = () => {
       fromUid: myUid,
       fromUsername: localName,
     });
-    await set(ref(database, `outgoingRequests/${myUid}/${popupTargetUid}`), true);
+    await set(
+      ref(database, `outgoingRequests/${myUid}/${popupTargetUid}`),
+      true
+    );
     setPopupVisible(false);
     Alert.alert("Friend request sent", `Sent to ${popupTargetName}.`);
   };
@@ -544,8 +567,15 @@ const Chat = () => {
           style: "destructive",
           onPress: async () => {
             try {
-              await remove(ref(database, `groupChats/${selectedChat}/participants/${user.uid}`));
-              await remove(ref(database, `users/${user.uid}/groups/${selectedChat}`));
+              await remove(
+                ref(
+                  database,
+                  `groupChats/${selectedChat}/participants/${user.uid}`
+                )
+              );
+              await remove(
+                ref(database, `users/${user.uid}/groups/${selectedChat}`)
+              );
               setSelectedChat("global");
             } catch (err) {
               console.error("Error leaving group:", err);
@@ -566,12 +596,18 @@ const Chat = () => {
 
   const handleUploadReceipt = () => {
     if (!username) return; // prevent navigation if username is not loaded
-    navigation.navigate("UploadReceipt", { groupId: selectedChat, myUsername: username });
+    navigation.navigate("UploadReceipt", {
+      groupId: selectedChat,
+      myUsername: username,
+    });
   };
-  
 
   const handleImportReceipt = async () => {
-    if (!longPressedMessage || !longPressedMessage.receiptData || !longPressedMessage.senderUid) {
+    if (
+      !longPressedMessage ||
+      !longPressedMessage.receiptData ||
+      !longPressedMessage.senderUid
+    ) {
       return;
     }
     setPopupVisible(false);
@@ -636,7 +672,10 @@ const Chat = () => {
         <TouchableOpacity
           activeOpacity={0.9}
           onPress={() => {
-            setExpandedMessages((prev) => ({ ...prev, [item.key]: !prev[item.key] }));
+            setExpandedMessages((prev) => ({
+              ...prev,
+              [item.key]: !prev[item.key],
+            }));
           }}
           onLongPress={(e) => {
             const { pageX, pageY } = e.nativeEvent;
@@ -653,7 +692,9 @@ const Chat = () => {
             styles.messageBubble,
             styles.receiptBubble,
             { maxWidth: "95%" },
-            isCurrentUserMessage ? styles.currentUserReceipt : styles.otherUserReceipt,
+            isCurrentUserMessage
+              ? styles.currentUserReceipt
+              : styles.otherUserReceipt,
           ]}
         >
           <Text
@@ -692,7 +733,9 @@ const Chat = () => {
                         Array.isArray(b.selected) &&
                         b.selected.some((val: boolean) => val)
                     );
-                    const buyerNames = filteredBuyers.map((b: any) => b.name).join(", ");
+                    const buyerNames = filteredBuyers
+                      .map((b: any) => b.name)
+                      .join(", ");
 
                     return (
                       <View key={index} style={styles.receiptItemRow}>
@@ -736,7 +779,9 @@ const Chat = () => {
         style={[
           styles.messageBubble,
           { maxWidth: "80%" },
-          isCurrentUserMessage ? styles.currentUserMessage : styles.otherUserMessage,
+          isCurrentUserMessage
+            ? styles.currentUserMessage
+            : styles.otherUserMessage,
         ]}
       >
         <Text
@@ -752,7 +797,9 @@ const Chat = () => {
         <Text
           style={[
             styles.messageText,
-            isCurrentUserMessage ? styles.currentUserText : styles.otherUserText,
+            isCurrentUserMessage
+              ? styles.currentUserText
+              : styles.otherUserText,
           ]}
         >
           {item.text}
@@ -772,6 +819,8 @@ const Chat = () => {
 
   return (
     <View style={styles.container}>
+      <StatusBar barStyle="light-content" backgroundColor={colors.yuck} />
+
       {/* header */}
       <View style={styles.headerContainer}>
         <TouchableOpacity onPress={() => navigation.navigate("Profile")}>
@@ -798,7 +847,12 @@ const Chat = () => {
 
         <TouchableOpacity onPress={handleTopRightIconPress}>
           {selectedChat !== "global" ? (
-            <FontAwesome name="minus" size={26} color="red" style={styles.icon} />
+            <FontAwesome
+              name="minus"
+              size={26}
+              color="red"
+              style={styles.icon}
+            />
           ) : (
             <FontAwesome
               name="plus"
@@ -859,7 +913,12 @@ const Chat = () => {
                   setDropdownOpen(false);
                 }}
               >
-                <FontAwesome name="users" size={16} color="#fff" style={styles.dropdownIcon} />
+                <FontAwesome
+                  name="users"
+                  size={16}
+                  color="#fff"
+                  style={styles.dropdownIcon}
+                />
                 <Text style={styles.dropdownItemText}>{g.name}</Text>
               </TouchableOpacity>
             ))}
@@ -880,7 +939,10 @@ const Chat = () => {
       {/* input row */}
       <View style={styles.inputArea}>
         {selectedChat !== "global" && (
-          <TouchableOpacity onPress={handleUploadReceipt} style={styles.receiptIcon}>
+          <TouchableOpacity
+            onPress={handleUploadReceipt}
+            style={styles.receiptIcon}
+          >
             <FontAwesome name="file-text-o" size={24} color={colors.yellow} />
           </TouchableOpacity>
         )}
@@ -898,62 +960,91 @@ const Chat = () => {
         </Pressable>
       </View>
 
-{/* popup menu */}
-<Modal visible={popupVisible} transparent animationType="fade">
-  <TouchableWithoutFeedback onPress={() => setPopupVisible(false)}>
-    <View style={styles.modalOverlay} />
-  </TouchableWithoutFeedback>
-  {popupVisible && (
-    <Animated.View
-      style={[
-        styles.popupContainer,
-        {
-          top: popupY,
-          left: Math.min(popupX, Dimensions.get("window").width - 180),
-        },
-      ]}
-    >
-      {isTargetFriend ? (
-        <TouchableOpacity onPress={confirmRemoveFriend} style={styles.popupItem}>
-          <View style={styles.popupItemContent}>
-            <Icon name="user-minus" size={18} color="#FF5252" style={styles.popupIcon} />
-            <Text style={[styles.popupText, { color: "#FF5252" }]}>
-              Remove Friend
-            </Text>
-          </View>
-        </TouchableOpacity>
-      ) : (
-        <TouchableOpacity onPress={handleAddFriend} style={styles.popupItem}>
-          <View style={styles.popupItemContent}>
-            <Icon name="user-plus" size={18} color={colors.yellow} style={styles.popupIcon} />
-            <Text style={[styles.popupText, { color: colors.yellow }]}>Add Friend</Text>
-          </View>
-        </TouchableOpacity>
-      )}
-      <View style={styles.popupDivider} />
-      <TouchableOpacity onPress={handleMessage} style={styles.popupItem}>
-        <View style={styles.popupItemContent}>
-          <Icon name="message-circle" size={18} color="#fff" style={styles.popupIcon} />
-          <Text style={styles.popupText}>Message</Text>
-        </View>
-      </TouchableOpacity>
-      {selectedChat !== "global" && longPressedMessage?.type === "receipt" && (
-        <>
-          <View style={styles.popupDivider} />
-          <TouchableOpacity
-            onPress={handleImportReceipt}
-            style={styles.popupItem}
+      {/* popup menu */}
+      <Modal visible={popupVisible} transparent animationType="fade">
+        <TouchableWithoutFeedback onPress={() => setPopupVisible(false)}>
+          <View style={styles.modalOverlay} />
+        </TouchableWithoutFeedback>
+        {popupVisible && (
+          <Animated.View
+            style={[
+              styles.popupContainer,
+              {
+                top: popupY,
+                left: Math.min(popupX, Dimensions.get("window").width - 180),
+              },
+            ]}
           >
-            <View style={styles.popupItemContent}>
-              <Icon name="download" size={18} color="#fff" style={styles.popupIcon} />
-              <Text style={styles.popupText}>Import Receipt</Text>
-            </View>
-          </TouchableOpacity>
-        </>
-      )}
-    </Animated.View>
-  )}
-</Modal>
+            {isTargetFriend ? (
+              <TouchableOpacity
+                onPress={confirmRemoveFriend}
+                style={styles.popupItem}
+              >
+                <View style={styles.popupItemContent}>
+                  <Icon
+                    name="user-minus"
+                    size={18}
+                    color="#FF5252"
+                    style={styles.popupIcon}
+                  />
+                  <Text style={[styles.popupText, { color: "#FF5252" }]}>
+                    Remove Friend
+                  </Text>
+                </View>
+              </TouchableOpacity>
+            ) : (
+              <TouchableOpacity
+                onPress={handleAddFriend}
+                style={styles.popupItem}
+              >
+                <View style={styles.popupItemContent}>
+                  <Icon
+                    name="user-plus"
+                    size={18}
+                    color={colors.yellow}
+                    style={styles.popupIcon}
+                  />
+                  <Text style={[styles.popupText, { color: colors.yellow }]}>
+                    Add Friend
+                  </Text>
+                </View>
+              </TouchableOpacity>
+            )}
+            <View style={styles.popupDivider} />
+            <TouchableOpacity onPress={handleMessage} style={styles.popupItem}>
+              <View style={styles.popupItemContent}>
+                <Icon
+                  name="message-circle"
+                  size={18}
+                  color="#fff"
+                  style={styles.popupIcon}
+                />
+                <Text style={styles.popupText}>Message</Text>
+              </View>
+            </TouchableOpacity>
+            {selectedChat !== "global" &&
+              longPressedMessage?.type === "receipt" && (
+                <>
+                  <View style={styles.popupDivider} />
+                  <TouchableOpacity
+                    onPress={handleImportReceipt}
+                    style={styles.popupItem}
+                  >
+                    <View style={styles.popupItemContent}>
+                      <Icon
+                        name="download"
+                        size={18}
+                        color="#fff"
+                        style={styles.popupIcon}
+                      />
+                      <Text style={styles.popupText}>Import Receipt</Text>
+                    </View>
+                  </TouchableOpacity>
+                </>
+              )}
+          </Animated.View>
+        )}
+      </Modal>
     </View>
   );
 };

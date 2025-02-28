@@ -6,6 +6,7 @@ import {
   Dimensions,
   Modal,
   TouchableWithoutFeedback,
+  StatusBar,
   Image,
   Text,
   Animated,
@@ -163,7 +164,10 @@ const Home = () => {
 
       // you may still want to move existing messages if you store them under "chat/messages/<username>"
       if (currentUsername) {
-        const oldMessagesRef = ref(database, `chat/messages/${currentUsername}`);
+        const oldMessagesRef = ref(
+          database,
+          `chat/messages/${currentUsername}`
+        );
         const messagesSnapshot = await get(oldMessagesRef);
 
         if (messagesSnapshot.exists()) {
@@ -277,6 +281,8 @@ const Home = () => {
 
   return (
     <View style={styles.container}>
+      <StatusBar barStyle="light-content" backgroundColor={colors.yuck} />
+
       {/* icon row */}
       <View style={styles.iconRow}>
         <Pressable

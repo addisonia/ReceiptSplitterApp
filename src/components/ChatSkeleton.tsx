@@ -64,6 +64,9 @@ const ChatSkeleton: React.FC = () => {
 
   return (
     <View style={styles.container}>
+      <View style={styles.headerContainer}>
+        <Text style={styles.headerText}>You're Missing Out...</Text>
+      </View>
       <View style={styles.messagesContainer}>
         {messages.map((msg, index) => (
           <SkeletonMessage
@@ -85,11 +88,22 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: colors.yuck,
   },
+  headerContainer: {
+    flex: 0,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  headerText: {
+    fontSize: 22,
+    color: "white",
+    paddingTop: 30,
+  },
   messagesContainer: {
     flex: 0.7,
     padding: 15,
     justifyContent: "center",
     marginTop: screenHeight * 0.05,
+    marginBottom: screenHeight * -0.05,
     paddingHorizontal: 30,
   },
   skeletonMessage: {

@@ -4,6 +4,7 @@ import {
   View,
   Text,
   StyleSheet,
+  StatusBar,
   Pressable,
   ScrollView,
   Alert,
@@ -64,7 +65,8 @@ export default function UploadReceipt() {
       // sort by most recent date
       loaded.sort(
         (a, b) =>
-          new Date(b.time_and_date).getTime() - new Date(a.time_and_date).getTime()
+          new Date(b.time_and_date).getTime() -
+          new Date(a.time_and_date).getTime()
       );
       setReceipts(loaded);
     });
@@ -121,6 +123,8 @@ export default function UploadReceipt() {
 
   return (
     <View style={styles.mainContainer}>
+      <StatusBar barStyle="light-content" backgroundColor={colors.yuck} />
+
       <View style={styles.topBar}>
         <Pressable
           onPress={handleBack}
@@ -171,7 +175,9 @@ function normalizeReceiptData(receiptKey: string, rawData: any): ReceiptData {
   return {
     name: receiptKey,
     items: Array.isArray(rawData.items) ? rawData.items.map(normalizeItem) : [],
-    buyers: Array.isArray(rawData.buyers) ? rawData.buyers.map(normalizeBuyer) : [],
+    buyers: Array.isArray(rawData.buyers)
+      ? rawData.buyers.map(normalizeBuyer)
+      : [],
     tax: typeof rawData.tax === "number" ? rawData.tax : 0,
     time_and_date:
       typeof rawData.time_and_date === "string" ? rawData.time_and_date : "",
@@ -190,7 +196,9 @@ function normalizeItem(rawItem: any): ItemType {
     item: typeof rawItem.item === "string" ? rawItem.item : "Unnamed",
     price: typeof rawItem.price === "number" ? rawItem.price : 0,
     quantity: typeof rawItem.quantity === "number" ? rawItem.quantity : 1,
-    buyers: Array.isArray(rawItem.buyers) ? rawItem.buyers.map(normalizeBuyer) : [],
+    buyers: Array.isArray(rawItem.buyers)
+      ? rawItem.buyers.map(normalizeBuyer)
+      : [],
   };
 }
 

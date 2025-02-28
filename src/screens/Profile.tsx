@@ -106,20 +106,29 @@ const Profile = ({ navigation }: any) => {
 
   // 1) load all known usernames
   useEffect(() => {
-    const usernamesRef = ref(database, "usernames");
-    return onValue(usernamesRef, (snapshot) => {
+    const usersRef = ref(database, "users");
+    return onValue(usersRef, (snapshot) => {
       const data = snapshot.val();
+      console.log("Raw users data from Firebase:", data);
       const userArray: DBUser[] = [];
+  
       if (data) {
-        Object.entries(data).forEach(([username, uid]) => {
-          if (typeof uid === "string") {
-            userArray.push({ username, uid });
+        Object.entries(data).forEach(([uid, userData]) => {
+          const user = userData as { username?: string };
+          if (user.username) {
+            userArray.push({ uid, username: user.username });
           }
         });
+      } else {
+        console.log("No users data found in Firebase");
       }
+      // console.log("Parsed user array:", userArray);
       setAllUsers(userArray);
+    }, (error) => {
+      console.error("Error fetching users:", error);
     });
   }, []);
+
 
   // 2) listen for friend requests + friend list
   useEffect(() => {
@@ -192,7 +201,7 @@ const Profile = ({ navigation }: any) => {
     const results = allUsers.filter((user) => {
       if (user.uid === myUid) return false;
       if (friendUids.has(user.uid)) return false;
-      if (outgoingRequests.has(user.uid)) return false;
+      // if (outgoingRequests.has(user.uid)) return false;
       return user.username.toLowerCase().includes(lowerTerm);
     });
     setFilteredUsers(results);
@@ -310,20 +319,20 @@ const Profile = ({ navigation }: any) => {
   // if collapsed, we show a small block (so the header is still visible)
   // if not collapsed, let it flex
   const addSectionStyle: ViewStyle = addCollapsed
-    ? { height: 50, overflow: "hidden" } // Fix: use "hidden" explicitly
-    : { flex: 1 };
+    ? { height: 65, overflow: "hidden" } // Fix: use "hidden" explicitly
+    : { flex: 1.25 };
 
   const requestsSectionStyle: ViewStyle = requestsCollapsed
-    ? { height: 50, overflow: "hidden" } // Fix: use "hidden" explicitly
-    : { flex: 1 };
+    ? { height: 65, overflow: "hidden" } // Fix: use "hidden" explicitly
+    : { flex: .75 };
 
   const friendsSectionStyle: ViewStyle = friendsCollapsed
-    ? { height: 50, overflow: "hidden" } // Fix: use "hidden" explicitly
+    ? { height: 65, overflow: "hidden" } // Fix: use "hidden" explicitly
     : { flex: 1 };
 
   return (
     <SafeAreaView style={styles.flexContainer}>
-      <StatusBar barStyle="light-content" />
+      <StatusBar barStyle="light-content" backgroundColor={colors.yuck} />
       {/* gradient background */}
       <LinearGradient
         colors={[colors.yuck, colors.yuckLight]}
@@ -690,6 +699,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
     position: "relative",
     marginVertical: 8,
+    marginBottom: 20,
   },
   sectionTitle: {
     fontSize: 18,

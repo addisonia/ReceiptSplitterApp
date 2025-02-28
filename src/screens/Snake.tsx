@@ -6,6 +6,7 @@ import {
   Text,
   StyleSheet,
   Dimensions,
+  StatusBar,
   TouchableOpacity,
   TouchableWithoutFeedback,
 } from "react-native";
@@ -22,6 +23,7 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 /* import asyncstorage from @react-native-async-storage/async-storage library */
 import { RootStackParamList } from "../types/RootStackParams";
 /* import rootstackparamlist type from types/rootstackparams file */
+import { colors } from "../components/ColorThemes";
 
 const snakeSize = 20;
 /* define the size of each snake segment and food */
@@ -64,7 +66,6 @@ const Snake: React.FC = () => {
   const [isModeSelectionOpen, setIsModeSelectionOpen] = useState(false); // state for dropdown visibility
   /* usestate hook to manage mode selection dropdown visibility, default is closed */
 
-
   // snake, food, direction, etc.
   const snakeRef = useRef([{ x: 0, y: 0 }]); // start at top-left corner
   /* useref hook to manage snake body as array of coordinates, starts with one segment at top-left */
@@ -93,13 +94,11 @@ const Snake: React.FC = () => {
   const growthRef = useRef(gameModes[selectedMode].growthRate);
   /* useref hook to manage snake growth rate, initialized with growth rate from selected mode */
 
-
   // just to force re-render of the ui
   const [tick, setTick] = useState(0);
   /* usestate hook to force re-render the component on game updates */
   const [pauseTick, setPauseTick] = useState(0); // NEW state for pause re-render
   /* usestate hook to force re-render component when game is paused/unpaused */
-
 
   // update refs when mode changes and reset the game
   useEffect(() => {
@@ -194,7 +193,9 @@ const Snake: React.FC = () => {
     /* reset current score to 1 */
     placeFood();
     /* place food at a new random position */
-    setTick((t) => t + 1); /* force re-render to update food position immediately after mode change */
+    setTick(
+      (t) => t + 1
+    ); /* force re-render to update food position immediately after mode change */
   };
 
   const checkCollisions = (head: { x: number; y: number }) => {
@@ -394,7 +395,7 @@ const Snake: React.FC = () => {
     /* function to toggle pause state of the game */
     isPausedRef.current = !isPausedRef.current;
     /* toggle pause state in ref */
-    setPauseTick(pt => pt + 1); // Force re-render by updating pauseTick (NEW LINE)
+    setPauseTick((pt) => pt + 1); // Force re-render by updating pauseTick (NEW LINE)
     /* force re-render to show/hide pause overlay */
   };
 
@@ -443,10 +444,11 @@ const Snake: React.FC = () => {
     /* close the mode selection dropdown */
   };
 
-
   return (
     /* return the main view for the snake game component */
     <View style={styles.container}>
+      <StatusBar barStyle="light-content" backgroundColor={colors.yuck} />
+
       {/* main container view */}
       {/* top row: home icon on left, picker on right */}
       <View style={styles.topRow}>
@@ -474,7 +476,9 @@ const Snake: React.FC = () => {
             onPress={() => setIsModeSelectionOpen(!isModeSelectionOpen)}
             /* toggle mode selection dropdown visibility on press */
           >
-            <Text style={styles.selectModeText}>{selectedMode.replace('_', ' ')}</Text>
+            <Text style={styles.selectModeText}>
+              {selectedMode.replace("_", " ")}
+            </Text>
             {/* text displaying currently selected mode */}
             <Icon
               name={isModeSelectionOpen ? "caret-up" : "caret-down"}
@@ -502,10 +506,14 @@ const Snake: React.FC = () => {
                     selectedMode === mode ? styles.selectedMode : null,
                   ]}
                   /* style for each mode item, highlights selected mode */
-                  onPress={() => handleModeChange(mode as keyof typeof gameModes)}
+                  onPress={() =>
+                    handleModeChange(mode as keyof typeof gameModes)
+                  }
                   /* on press, call handlemodechange to set selected mode */
                 >
-                  <Text style={styles.modeItemText}>{mode.replace('_', ' ')}</Text>
+                  <Text style={styles.modeItemText}>
+                    {mode.replace("_", " ")}
+                  </Text>
                   {/* text displaying game mode name in dropdown */}
                 </TouchableOpacity>
               ))}
@@ -558,7 +566,10 @@ const Snake: React.FC = () => {
           {/* food */}
           <View
             /* view for food */
-            style={[styles.food, { left: foodRef.current.x, top: foodRef.current.y }]}
+            style={[
+              styles.food,
+              { left: foodRef.current.x, top: foodRef.current.y },
+            ]}
             /* style for food, positioning it based on food coordinates */
           />
           {isPausedRef.current && (
@@ -636,13 +647,13 @@ const styles = StyleSheet.create({
     /* mode select container style */
     flex: 3,
     marginRight: 4,
-    alignItems: 'flex-end', // Align button to the right
+    alignItems: "flex-end", // Align button to the right
   },
   selectModeButton: {
     /* select mode button style */
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
     borderColor: "#000",
     borderWidth: 2,
     backgroundColor: "#e3d400",
@@ -652,7 +663,7 @@ const styles = StyleSheet.create({
   },
   selectModeText: {
     /* select mode text style */
-    color: '#000',
+    color: "#000",
     fontSize: 18,
   },
   dropdownIcon: {
@@ -661,12 +672,12 @@ const styles = StyleSheet.create({
   },
   modeDropdown: {
     /* mode dropdown style */
-    position: 'absolute',
+    position: "absolute",
     top: 45, // Adjust as needed to position below the button
     right: 0,
-    width: '100%', // Match button width
-    backgroundColor: '#e3d400',
-    borderColor: '#000',
+    width: "100%", // Match button width
+    backgroundColor: "#e3d400",
+    borderColor: "#000",
     borderWidth: 2,
     borderRadius: 5,
     marginTop: 5,
@@ -677,16 +688,16 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
     paddingHorizontal: 15,
     borderBottomWidth: 1,
-    borderBottomColor: '#000',
+    borderBottomColor: "#000",
   },
   modeItemText: {
     /* mode dropdown item text style */
     fontSize: 18,
-    color: '#000',
+    color: "#000",
   },
   selectedMode: {
     /* selected mode item style in dropdown */
-    backgroundColor: '#f0e68c', // Slightly darker yellow for selected item
+    backgroundColor: "#f0e68c", // Slightly darker yellow for selected item
   },
   scoreboardContainer: {
     /* scoreboard container style */
@@ -801,8 +812,8 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     marginTop: (windowHeight - gameAreaHeight) / 50,
     width: gameAreaWidth,
-    justifyContent: 'space-between',
-    alignItems: 'stretch',
+    justifyContent: "space-between",
+    alignItems: "stretch",
     flexGrow: 1,
   },
   verticalButtons: {
