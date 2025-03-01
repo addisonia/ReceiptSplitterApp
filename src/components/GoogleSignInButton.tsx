@@ -1,3 +1,5 @@
+//OLD CODE used for testing with expo go
+
 // import React, { useEffect } from 'react';
 // import {
 //   Pressable,
@@ -116,9 +118,8 @@ const GoogleSignInButton: React.FC<GoogleSignInButtonProps> = ({ onSuccess, styl
   // Configure Google Signin
   React.useEffect(() => {
     GoogleSignin.configure({
-      // Remove androidClientId since it's handled by google-services.json
-      webClientId: '405450216696-5vuae9eo51ol4grkorih91589g40n8o8.apps.googleusercontent.com', // Required for Firebase
-      offlineAccess: true, // Enables refresh token
+      webClientId: '405450216696-5vuae9eo51ol4grkorih91589g40n8o8.apps.googleusercontent.com',
+      offlineAccess: true,
       scopes: ['profile', 'email'],
     });
   }, []);
@@ -130,6 +131,9 @@ const GoogleSignInButton: React.FC<GoogleSignInButtonProps> = ({ onSuccess, styl
 
       // Check if Play Services are available
       await GoogleSignin.hasPlayServices();
+
+      // Sign out to force account picker (optional: only if signed in)
+      await GoogleSignin.signOut();
 
       // Sign in with Google
       const response = await GoogleSignin.signIn();

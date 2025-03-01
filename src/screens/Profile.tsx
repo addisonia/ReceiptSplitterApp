@@ -109,7 +109,7 @@ const Profile = ({ navigation }: any) => {
     const usersRef = ref(database, "users");
     return onValue(usersRef, (snapshot) => {
       const data = snapshot.val();
-      console.log("Raw users data from Firebase:", data);
+      // console.log("Raw users data from Firebase:", data);
       const userArray: DBUser[] = [];
   
       if (data) {

@@ -223,12 +223,12 @@ const Split: React.FC = () => {
           setTax(importedReceipt.tax || 0);
           importedReceiptUsed.current = true;
           navigation.setParams({ importedReceipt: undefined });
-          console.log("Initial Imported Receipt Applied:", {
-            receiptName: importedReceipt.name,
-            buyers: importedReceipt.buyers,
-            items: safeItems,
-            tax: importedReceipt.tax,
-          });
+          // console.log("Initial Imported Receipt Applied:", {
+          //   receiptName: importedReceipt.name,
+          //   buyers: importedReceipt.buyers,
+          //   items: safeItems,
+          //   tax: importedReceipt.tax,
+          // });
         }
       } catch (error) {
         console.log("Error during initialization:", error);
@@ -260,12 +260,12 @@ const Split: React.FC = () => {
       setTax(importedReceipt.tax || 0);
       importedReceiptUsed.current = true;
       navigation.setParams({ importedReceipt: undefined });
-      console.log("Dynamic Imported Receipt Applied:", {
-        receiptName: importedReceipt.name,
-        buyers: importedReceipt.buyers,
-        items: safeItems,
-        tax: importedReceipt.tax,
-      });
+      // console.log("Dynamic Imported Receipt Applied:", {
+      //   receiptName: importedReceipt.name,
+      //   buyers: importedReceipt.buyers,
+      //   items: safeItems,
+      //   tax: importedReceipt.tax,
+      // });
     }
   }, [route.params?.importedReceipt, navigation]); // Re-run when importedReceipt changes, no theme reset
 
