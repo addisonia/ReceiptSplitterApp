@@ -14,6 +14,7 @@ import {
   Dimensions,
   Alert,
   Animated,
+  Clipboard,
 } from "react-native";
 import { FontAwesome } from "@expo/vector-icons";
 import { auth, database } from "../firebase";
@@ -484,9 +485,27 @@ const Chat = () => {
     setLongPressedMessage(messageItem);
     setPopupTargetUid(targetUid);
     setPopupTargetName(targetName);
+
+    // Get screen dimensions
+    const screenHeight = Dimensions.get("window").height;
+    const inputAreaHeight = 70; // Approximate height of inputArea based on styles
+    const popupHeight = 150; // Approximate height of popup (adjust based on content)
+
+    // Adjust popupY to stay above input area
+    const adjustedY = Math.min(
+      pageY,
+      screenHeight - inputAreaHeight - popupHeight - 10 // 10 for padding
+    );
+
     setPopupX(pageX);
-    setPopupY(pageY);
+    setPopupY(adjustedY);
     setPopupVisible(true);
+  };
+
+  const handleCopyMessage = () => {
+    if (!longPressedMessage) return;
+    Clipboard.setString(longPressedMessage.text || "");
+    setPopupVisible(false);
   };
 
   const handleAddFriend = async () => {
@@ -1034,7 +1053,7 @@ const Chat = () => {
                       <Icon
                         name="download"
                         size={18}
-                        color="#fff"
+                        color="white"
                         style={styles.popupIcon}
                       />
                       <Text style={styles.popupText}>Import Receipt</Text>
@@ -1042,6 +1061,25 @@ const Chat = () => {
                   </TouchableOpacity>
                 </>
               )}
+            {longPressedMessage?.type !== "receipt" && (
+              <>
+                <View style={styles.popupDivider} />
+                <TouchableOpacity
+                  onPress={handleCopyMessage}
+                  style={styles.popupItem}
+                >
+                  <View style={styles.popupItemContent}>
+                    <Icon
+                      name="copy"
+                      size={18}
+                      color="#fff"
+                      style={styles.popupIcon}
+                    />
+                    <Text style={styles.popupText}>Copy</Text>
+                  </View>
+                </TouchableOpacity>
+              </>
+            )}
           </Animated.View>
         )}
       </Modal>

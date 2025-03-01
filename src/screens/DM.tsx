@@ -8,13 +8,19 @@ import {
   TextInput,
   Pressable,
   TouchableOpacity,
+  Modal,
+  Animated,
+  Dimensions,
+  TouchableWithoutFeedback,
 } from "react-native";
 import { auth, database } from "../firebase";
 import { ref, onValue, push, set } from "firebase/database";
 import colors from "../../constants/colors";
 import { RouteProp, useNavigation, useRoute } from "@react-navigation/native";
 import { onAuthStateChanged, User } from "firebase/auth";
-import { FontAwesome, FontAwesome5 } from "@expo/vector-icons";
+import { FontAwesome5 } from "@expo/vector-icons";
+import Icon from "react-native-vector-icons/Feather";
+import { Clipboard } from "react-native";
 
 // define route params for DM
 type DMRouteProp = RouteProp<
@@ -42,6 +48,13 @@ const DM = () => {
   const [expandedMessages, setExpandedMessages] = useState<
     Record<string, boolean>
   >({});
+  // Popup menu state
+  const [popupVisible, setPopupVisible] = useState(false);
+  const [popupX, setPopupX] = useState(0);
+  const [popupY, setPopupY] = useState(0);
+  const [longPressedMessage, setLongPressedMessage] = useState<DMMessage | null>(
+    null
+  );
 
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, (user) => {
@@ -127,6 +140,35 @@ const DM = () => {
     }));
   };
 
+  const handleBubbleLongPress = (
+    pageX: number,
+    pageY: number,
+    messageItem: DMMessage
+  ) => {
+    setLongPressedMessage(messageItem);
+
+    // Get screen dimensions
+    const screenHeight = Dimensions.get("window").height;
+    const inputAreaHeight = 70; // Approximate height of inputArea based on styles
+    const popupHeight = 60; // Approximate height of popup with one item
+
+    // Adjust popupY to stay above input area
+    const adjustedY = Math.min(
+      pageY,
+      screenHeight - inputAreaHeight - popupHeight - 10 // 10 for padding
+    );
+
+    setPopupX(pageX);
+    setPopupY(adjustedY);
+    setPopupVisible(true);
+  };
+
+  const handleCopyMessage = () => {
+    if (!longPressedMessage) return;
+    Clipboard.setString(longPressedMessage.text || "");
+    setPopupVisible(false);
+  };
+
   const renderMessage = ({ item }: { item: DMMessage }) => {
     const isOwn = item.senderUid === currentUser?.uid;
     const isExpanded = expandedMessages[item.key] || false;
@@ -135,6 +177,10 @@ const DM = () => {
       <TouchableOpacity
         activeOpacity={0.8}
         onPress={() => toggleTimestamp(item.key)}
+        onLongPress={(e) => {
+          const { pageX, pageY } = e.nativeEvent;
+          handleBubbleLongPress(pageX, pageY, item);
+        }}
         style={[
           styles.messageBubble,
           isOwn ? styles.ownBubble : styles.otherBubble,
@@ -190,6 +236,36 @@ const DM = () => {
           <Text style={styles.sendButtonText}>Send</Text>
         </Pressable>
       </View>
+
+      {/* Popup menu */}
+      <Modal visible={popupVisible} transparent animationType="fade">
+        <TouchableWithoutFeedback onPress={() => setPopupVisible(false)}>
+          <View style={styles.modalOverlay} />
+        </TouchableWithoutFeedback>
+        {popupVisible && (
+          <Animated.View
+            style={[
+              styles.popupContainer,
+              {
+                top: popupY,
+                left: Math.min(popupX, Dimensions.get("window").width - 180),
+              },
+            ]}
+          >
+            <TouchableOpacity onPress={handleCopyMessage} style={styles.popupItem}>
+              <View style={styles.popupItemContent}>
+                <Icon
+                  name="copy"
+                  size={18}
+                  color="#fff"
+                  style={styles.popupIcon}
+                />
+                <Text style={styles.popupText}>Copy</Text>
+              </View>
+            </TouchableOpacity>
+          </Animated.View>
+        )}
+      </Modal>
     </View>
   );
 };
@@ -278,5 +354,42 @@ const styles = StyleSheet.create({
     color: "black",
     fontWeight: "bold",
     fontSize: 16,
+  },
+  // Popup styles (borrowed from Chat.tsx)
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: "rgba(0, 0, 0, 0.6)",
+  },
+  popupContainer: {
+    position: "absolute",
+    width: 180,
+    backgroundColor: "#1E2A38",
+    borderRadius: 12,
+    padding: 6,
+    zIndex: 999,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 8,
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.1)",
+  },
+  popupItem: {
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    borderRadius: 8,
+  },
+  popupItemContent: {
+    flexDirection: "row",
+    alignItems: "center",
+  },
+  popupIcon: {
+    marginRight: 12,
+  },
+  popupText: {
+    color: "#fff",
+    fontSize: 16,
+    fontWeight: "500",
   },
 });
