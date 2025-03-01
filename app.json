@@ -5,13 +5,12 @@
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
-    "scheme": "exp",
+    "scheme": "receiptsplitter",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "org.receiptsplitter.app",
-      "scheme": "exp"
+      "bundleIdentifier": "org.receiptsplitter.app"
     },
     "android": {
       "package": "org.receiptsplitter.app",
@@ -25,9 +24,7 @@
           "action": "VIEW",
           "data": [
             {
-              "scheme": "exp",
-              "host": "192.168.1.16",
-              "pathPrefix": "/--/"
+              "scheme": "receiptsplitter"
             }
           ],
           "category": ["BROWSABLE", "DEFAULT"]
@@ -53,9 +50,6 @@
     "extra": {
       "eas": {
         "projectId": "b7e0aa76-fa14-45e4-b0a9-8dad3bcebafb"
-      },
-      "deepLinking": {
-        "schemes": ["exp"]
       }
     },
     "owner": "addisonia"
