@@ -27,3 +27,5 @@ required installations to run code:
 - npm install @types/react@latest @types/react-native@latest
 - npm create cloudflare@latest oauth-redirect-worker
 - npm install expo-linear-gradient
+- npm i @react-native-google-signin/google-signin@latest
+- npx expo install expo-auth-session expo-web-browser expo-random
