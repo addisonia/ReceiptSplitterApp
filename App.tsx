@@ -18,7 +18,6 @@ import Profile from "./src/screens/Profile";
 import GroupChat from "./src/screens/GroupChat";
 import DM from "./src/screens/DM";
 import UploadReceipt from "./src/screens/UploadReceipt";
-import 'dotenv/config';
 
 const Tab = createMaterialTopTabNavigator();
 const Stack = createNativeStackNavigator();
