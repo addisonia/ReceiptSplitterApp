@@ -29,3 +29,4 @@ required installations to run code:
 - npm install expo-linear-gradient
 - npm i @react-native-google-signin/google-signin@latest
 - npx expo install expo-auth-session expo-web-browser expo-random
+- npm install --save-dev babel-plugin-dotenv

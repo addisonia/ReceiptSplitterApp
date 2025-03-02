@@ -105,6 +105,9 @@ import { auth } from '../firebase';
 import { signInWithCredential, GoogleAuthProvider } from 'firebase/auth';
 import colors from '../../constants/colors';
 import { FontAwesome5 } from '@expo/vector-icons';
+import { ANDROID_CLIENT_ID } from '@env';
+import { WEB_CLIENT_ID } from '@env';
+
 
 interface GoogleSignInButtonProps {
   onSuccess: () => void;
@@ -118,7 +121,7 @@ const GoogleSignInButton: React.FC<GoogleSignInButtonProps> = ({ onSuccess, styl
   // Configure Google Signin
   React.useEffect(() => {
     GoogleSignin.configure({
-      webClientId: '405450216696-5vuae9eo51ol4grkorih91589g40n8o8.apps.googleusercontent.com',
+      webClientId: ANDROID_CLIENT_ID,
       offlineAccess: true,
       scopes: ['profile', 'email'],
     });
