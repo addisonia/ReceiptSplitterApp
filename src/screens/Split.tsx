@@ -654,17 +654,21 @@ const Split: React.FC = () => {
     ? currentTheme.extraYuckLight
     : nonButtonTextColor;
 
-  return (
-    <SafeAreaView style={{ flex: 1, backgroundColor: currentTheme.offWhite2 }}>
-      <StatusBar backgroundColor="#000000" barStyle="light-content" />
-      <KeyboardAvoidingView
-        style={[
-          styles.container,
-          darkMode ? darkStyles.container : null,
-          { backgroundColor: currentTheme.offWhite2 },
-        ]}
-        behavior={Platform.OS === "ios" ? "padding" : undefined}
-      >
+    return (
+      <SafeAreaView style={{ flex: 1, backgroundColor: currentTheme.offWhite2 }}>
+        <StatusBar
+          barStyle="light-content"
+          backgroundColor={currentTheme.offWhite2} // Dynamically match the theme
+          translucent={Platform.OS === "android"}
+        />
+        <KeyboardAvoidingView
+          style={[
+            styles.container,
+            darkMode ? darkStyles.container : null,
+            { backgroundColor: currentTheme.offWhite2 },
+          ]}
+          behavior={Platform.OS === "ios" ? "padding" : undefined}
+        >
         {/* Sign-In Banner */}
         {showSignInBanner && (
           <Animated.View

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import {
   View,
   StyleSheet,
@@ -14,10 +14,10 @@ import {
 } from "react-native";
 import AppText from "../../components/AppText";
 import { FontAwesome5 } from "@expo/vector-icons";
-import { useNavigation } from "@react-navigation/native";
+import { useNavigation, useFocusEffect } from "@react-navigation/native";
 import { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { RootStackParamList } from "../types/RootStackParams";
-import colors from "../../constants/colors";
+// import colors from "../../constants/colors";
 import GoogleSignInButton from "../components/GoogleSignInButton";
 import { auth, database } from "../firebase";
 import { User, signOut } from "firebase/auth";
@@ -25,11 +25,21 @@ import PrivacyPolicy from "../components/PrivacyPolicy";
 // removed: no longer importing `child` or `onValue`; we only use get() and update().
 import { ref, get, update } from "firebase/database";
 import Receipts from "./Receipts";
+import AsyncStorage from "@react-native-async-storage/async-storage";
+import {
+  colors,
+  offWhiteTheme,
+  yuckTheme,
+  darkTheme,
+  getRandomHexColor,
+} from "../components/ColorThemes";
 
 type HomeScreenNavigationProp = NativeStackNavigationProp<
   RootStackParamList,
   "Home"
 >;
+
+const SPLIT_STORAGE_KEY = "@split_state";
 
 const screenWidth = Dimensions.get("window").width;
 const buttonWidth = screenWidth * 0.5;
@@ -56,6 +66,100 @@ const Home = () => {
   const [privacyIconColor, setPrivacyIconColor] = useState(colors.yellow);
   const [buttonBgColor, setButtonBgColor] = useState(colors.yellow);
   const [isPrivacyModalVisible, setPrivacyModalVisible] = useState(false);
+
+  const [darkMode, setDarkMode] = useState(false);
+  const [offWhiteMode, setOffWhiteMode] = useState(false);
+  const [yuckMode, setYuckMode] = useState(false);
+  const [randomMode, setRandomMode] = useState(false);
+  const [randomTheme, setRandomTheme] = useState(colors);
+
+  // load theme from AsyncStorage on mount
+  useEffect(() => {
+    (async () => {
+      try {
+        const storedData = await AsyncStorage.getItem(SPLIT_STORAGE_KEY);
+        if (storedData) {
+          const parsed = JSON.parse(storedData);
+          if (parsed?.settings) {
+            setDarkMode(parsed.settings.darkMode ?? false);
+            setOffWhiteMode(parsed.settings.offWhiteMode ?? false);
+            setYuckMode(parsed.settings.yuckMode ?? false);
+            setRandomMode(parsed.settings.randomMode ?? false);
+          }
+        }
+      } catch (error) {
+        console.log("Error loading theme:", error);
+      }
+    })();
+  }, []);
+
+  // if randomMode is on, update colors every second (like in Split)
+  useEffect(() => {
+    let intervalId: NodeJS.Timeout;
+    if (randomMode) {
+      intervalId = setInterval(() => {
+        setRandomTheme({
+          white: getRandomHexColor(),
+          offWhite: getRandomHexColor(),
+          offWhite2: getRandomHexColor(),
+          lightGray: getRandomHexColor(),
+          lightGray2: getRandomHexColor(),
+          yellow: getRandomHexColor(),
+          green: getRandomHexColor(),
+          yuck: getRandomHexColor(),
+          yuckLight: getRandomHexColor(),
+          blood: getRandomHexColor(),
+          orange: getRandomHexColor(),
+          gray1: getRandomHexColor(),
+          black: getRandomHexColor(),
+          textDefault: getRandomHexColor(),
+          extraYuckLight: getRandomHexColor(),
+        });
+      }, 1000);
+    }
+    return () => {
+      if (intervalId) clearInterval(intervalId);
+    };
+  }, [randomMode]);
+
+  // figure out which theme object to use
+  const currentTheme = randomMode
+    ? randomTheme
+    : yuckMode
+    ? yuckTheme
+    : offWhiteMode
+    ? offWhiteTheme
+    : darkMode
+    ? darkTheme
+    : colors;
+
+  // pick a text color for "Receipt" / "Splitter"
+  const titleTextColor =
+    offWhiteMode || (!darkMode && !yuckMode && !randomMode)
+      ? "#000" // black
+      : colors.lightGray2; // white (or whatever color you want in dark/yuck/random)
+
+  useFocusEffect(
+    useCallback(() => {
+      const loadTheme = async () => {
+        try {
+          const storedData = await AsyncStorage.getItem(SPLIT_STORAGE_KEY);
+          if (storedData) {
+            const parsed = JSON.parse(storedData);
+            if (parsed?.settings) {
+              setDarkMode(parsed.settings.darkMode ?? false);
+              setOffWhiteMode(parsed.settings.offWhiteMode ?? false);
+              setYuckMode(parsed.settings.yuckMode ?? false);
+              setRandomMode(parsed.settings.randomMode ?? false);
+            }
+          }
+        } catch (error) {
+          console.log("Error loading theme:", error);
+        }
+      };
+      loadTheme();
+    }, [])
+  );
 
   useEffect(() => {
     const unsubscribeAuth = auth.onAuthStateChanged(async (currentUser) => {
@@ -280,9 +384,9 @@ const Home = () => {
   };
 
   return (
-    <View style={styles.container}>
-      <StatusBar barStyle="light-content" backgroundColor={colors.yuck} />
-
+    <View
+      style={[styles.container, { backgroundColor: currentTheme.offWhite2 }]}
+    >
       {/* icon row */}
       <View style={styles.iconRow}>
         <Pressable
@@ -344,8 +448,19 @@ const Home = () => {
       )}
 
       <View style={styles.titleContainer}>
-        <AppText style={[styles.title, styles.boldText]}>Receipt</AppText>
-        <AppText style={[styles.title, styles.titleSpacing, styles.boldText]}>
+        <AppText
+          style={[styles.title, styles.boldText, { color: titleTextColor }]}
+        >
+          Receipt
+        </AppText>
+        <AppText
+          style={[
+            styles.title,
+            styles.titleSpacing,
+            styles.boldText,
+            { color: titleTextColor },
+          ]}
+        >
           Splitter
         </AppText>
       </View>
@@ -393,7 +508,7 @@ export default Home;
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: colors.yuck,
+    // backgroundColor: colors.yuck,
     alignItems: "center",
     justifyContent: "center",
   },

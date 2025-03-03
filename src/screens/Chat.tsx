@@ -1,5 +1,5 @@
 // chat.tsx
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import {
   View,
   Text,
@@ -20,12 +20,21 @@ import { FontAwesome } from "@expo/vector-icons";
 import { auth, database } from "../firebase";
 import { User, onAuthStateChanged } from "firebase/auth";
 import { ref, onValue, push, set, remove, get, child } from "firebase/database";
-import colors from "../../constants/colors";
 import ChatSkeleton from "../components/ChatSkeleton";
-import { useNavigation } from "@react-navigation/native";
+import { useNavigation, useFocusEffect } from "@react-navigation/native";
 import { RootStackParamList } from "../types/RootStackParams";
 import { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import Icon from "react-native-vector-icons/Feather";
+import AsyncStorage from "@react-native-async-storage/async-storage";
+import {
+  colors,
+  offWhiteTheme,
+  yuckTheme,
+  darkTheme,
+  getRandomHexColor,
+} from "../components/ColorThemes";
+
+const SPLIT_STORAGE_KEY = "@split_state";
 
 /* define route type */
 type ChatNavProp = NativeStackNavigationProp<RootStackParamList, "Chat">;
@@ -235,6 +244,99 @@ const Chat = () => {
   const [assignedColors, setAssignedColors] = useState<{
     [name: string]: string;
   }>({});
+
+  // new theme states
+  const [darkMode, setDarkMode] = useState(false);
+  const [offWhiteMode, setOffWhiteMode] = useState(false);
+  const [yuckMode, setYuckMode] = useState(false);
+  const [randomMode, setRandomMode] = useState(false);
+  const [randomTheme, setRandomTheme] = useState(colors);
+
+  // Just like in Split: if randomMode, set up an interval to update random colors
+  useEffect(() => {
+    let intervalId: NodeJS.Timeout;
+    if (randomMode) {
+      intervalId = setInterval(() => {
+        setRandomTheme({
+          white: getRandomHexColor(),
+          offWhite: getRandomHexColor(),
+          offWhite2: getRandomHexColor(),
+          lightGray: getRandomHexColor(),
+          lightGray2: getRandomHexColor(),
+          yellow: getRandomHexColor(),
+          green: getRandomHexColor(),
+          yuck: getRandomHexColor(),
+          yuckLight: getRandomHexColor(),
+          blood: getRandomHexColor(),
+          orange: getRandomHexColor(),
+          gray1: getRandomHexColor(),
+          black: getRandomHexColor(),
+          textDefault: getRandomHexColor(),
+          extraYuckLight: getRandomHexColor(),
+        });
+      }, 1000);
+    }
+    return () => {
+      if (intervalId) clearInterval(intervalId);
+    };
+  }, [randomMode]);
+
+  // function to load theme from AsyncStorage
+  async function loadThemeFromStorage() {
+    try {
+      const storedData = await AsyncStorage.getItem(SPLIT_STORAGE_KEY);
+      if (storedData) {
+        const parsed = JSON.parse(storedData);
+        if (parsed?.settings) {
+          setDarkMode(parsed.settings.darkMode ?? false);
+          setOffWhiteMode(parsed.settings.offWhiteMode ?? false);
+          setYuckMode(parsed.settings.yuckMode ?? false);
+          setRandomMode(parsed.settings.randomMode ?? false);
+        }
+      }
+    } catch (error) {
+      console.log("Error loading chat theme:", error);
+    }
+  }
+
+  // useFocusEffect so we re-check theme whenever Chat is focused
+  useFocusEffect(
+    useCallback(() => {
+      loadThemeFromStorage();
+    }, [])
+  );
+
+  // figure out current theme
+  const currentTheme = randomMode
+    ? randomTheme
+    : yuckMode
+    ? yuckTheme
+    : offWhiteMode
+    ? offWhiteTheme
+    : darkMode
+    ? darkTheme
+    : colors;
+
+  // figure out the top bar text color
+  const titleBarTextColor =
+    offWhiteMode || (!darkMode && !yuckMode && !randomMode)
+      ? "#000" // black
+      : colors.lightGray2; // white in dark/yuck/random
+
+  // watch auth changes, etc. ...
+  useEffect(() => {
+    const unsubscribeAuth = onAuthStateChanged(auth, (currentUser) => {
+      setUser(currentUser);
+      if (currentUser) {
+        setIsSignedIn(true);
+        // etc...
+      } else {
+        setIsSignedIn(false);
+        setUsername("Guest");
+      }
+    });
+    return () => unsubscribeAuth();
+  }, []);
 
   /* watch auth changes */
   useEffect(() => {
@@ -704,7 +806,12 @@ const Chat = () => {
 
   if (!isSignedIn) {
     return (
-      <View style={styles.signInMessageContainer}>
+      <View
+        style={[
+          styles.signInMessageContainer,
+          { backgroundColor: currentTheme.offWhite2 },
+        ]}
+      >
         <ChatSkeleton />
       </View>
     );
@@ -866,11 +973,18 @@ const Chat = () => {
   });
 
   return (
-    <View style={styles.container}>
-      <StatusBar barStyle="light-content" backgroundColor={colors.yuck} />
+    <View
+      style={[styles.container, { backgroundColor: currentTheme.offWhite2 }]}
+    >
+      {/* <StatusBar barStyle="light-content" backgroundColor={currentTheme.offWhite2} /> */}
 
       {/* header */}
-      <View style={styles.headerContainer}>
+      <View
+        style={[
+          styles.headerContainer,
+          { backgroundColor: currentTheme.offWhite2 },
+        ]}
+      >
         <TouchableOpacity onPress={() => navigation.navigate("Profile")}>
           <FontAwesome
             name="users"
@@ -884,11 +998,13 @@ const Chat = () => {
           style={styles.headerTitleWrapper}
           onPress={() => setDropdownOpen(true)}
         >
-          <Text style={styles.headerText}>{currentChatName}</Text>
+          <Text style={[styles.headerText, { color: titleBarTextColor }]}>
+            {currentChatName}
+          </Text>
           <FontAwesome
             name="chevron-down"
             size={16}
-            color={colors.yellow}
+            color={currentTheme.yellow}
             style={{ marginLeft: 5 }}
           />
         </TouchableOpacity>
@@ -1128,14 +1244,14 @@ export default Chat;
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: colors.yuck,
+    // backgroundColor: colors.yuck,
   },
   headerContainer: {
     flexDirection: "row",
     alignItems: "center",
     paddingHorizontal: 10,
     paddingVertical: 15,
-    backgroundColor: colors.yuck,
+    // backgroundColor: colors.yuck,
     shadowColor: "#000",
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.3,

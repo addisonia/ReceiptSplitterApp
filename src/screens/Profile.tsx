@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useCallback } from "react";
 import {
   View,
   Text,
@@ -19,6 +19,15 @@ import { auth, database } from "../firebase";
 import { FontAwesome5 } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 import { ViewStyle } from "react-native";
+import AsyncStorage from "@react-native-async-storage/async-storage";
+import { useFocusEffect } from "@react-navigation/native";
+import {
+  colors,
+  offWhiteTheme,
+  yuckTheme,
+  darkTheme,
+  getRandomHexColor,
+} from "../components/ColorThemes";
 
 /* enable layout animations on android */
 if (
@@ -28,24 +37,24 @@ if (
   UIManager.setLayoutAnimationEnabledExperimental(true);
 }
 
-// color palette
-const colors = {
-  white: "#ffffff",
-  offWhite: "#5c540b",
-  offWhite2: "#5c540b",
-  lightGray: "#7d7a55",
-  lightGray2: "#7d7a55",
-  yellow: "#e3d400",
-  green: "#08f800",
-  yuck: "#5c540b",
-  yuckLight: "#9e9b7b",
-  blood: "rgb(182,57,11)",
-  orange: "#de910d",
-  gray1: "#a4a4a4",
-  black: "#000000",
-  textDefault: "#000000",
-  extraYuckLight: "#d7d4b5",
-};
+// // color palette
+// const colors = {
+//   white: "#ffffff",
+//   offWhite: "#5c540b",
+//   offWhite2: "#5c540b",
+//   lightGray: "#7d7a55",
+//   lightGray2: "#7d7a55",
+//   yellow: "#e3d400",
+//   green: "#08f800",
+//   yuck: "#5c540b",
+//   yuckLight: "#9e9b7b",
+//   blood: "rgb(182,57,11)",
+//   orange: "#de910d",
+//   gray1: "#a4a4a4",
+//   black: "#000000",
+//   textDefault: "#000000",
+//   extraYuckLight: "#d7d4b5",
+// };
 
 interface DBUser {
   username: string;
@@ -57,6 +66,8 @@ interface FriendRequest {
   fromUsername: string;
   key: string;
 }
+
+const SPLIT_STORAGE_KEY = "@split_state";
 
 const Profile = ({ navigation }: any) => {
   const currentUser = auth.currentUser;
@@ -90,6 +101,81 @@ const Profile = ({ navigation }: any) => {
     new Set()
   );
 
+  // theming states
+  const [darkMode, setDarkMode] = useState(false);
+  const [offWhiteMode, setOffWhiteMode] = useState(false);
+  const [yuckMode, setYuckMode] = useState(false);
+  const [randomMode, setRandomMode] = useState(false);
+  const [randomTheme, setRandomTheme] = useState(colors);
+
+  // read theme from storage when the screen focuses
+  useFocusEffect(
+    useCallback(() => {
+      const loadTheme = async () => {
+        try {
+          const storedData = await AsyncStorage.getItem(SPLIT_STORAGE_KEY);
+          if (storedData) {
+            const parsed = JSON.parse(storedData);
+            if (parsed?.settings) {
+              setDarkMode(parsed.settings.darkMode ?? false);
+              setOffWhiteMode(parsed.settings.offWhiteMode ?? false);
+              setYuckMode(parsed.settings.yuckMode ?? false);
+              setRandomMode(parsed.settings.randomMode ?? false);
+            }
+          }
+        } catch (err) {
+          console.error("Error loading profile theme:", err);
+        }
+      };
+      loadTheme();
+    }, [])
+  );
+
+  // handle randomMode just like in Split
+  useEffect(() => {
+    let intervalId: NodeJS.Timeout;
+    if (randomMode) {
+      intervalId = setInterval(() => {
+        setRandomTheme({
+          white: getRandomHexColor(),
+          offWhite: getRandomHexColor(),
+          offWhite2: getRandomHexColor(),
+          lightGray: getRandomHexColor(),
+          lightGray2: getRandomHexColor(),
+          yellow: getRandomHexColor(),
+          green: getRandomHexColor(),
+          yuck: getRandomHexColor(),
+          yuckLight: getRandomHexColor(),
+          blood: getRandomHexColor(),
+          orange: getRandomHexColor(),
+          gray1: getRandomHexColor(),
+          black: getRandomHexColor(),
+          textDefault: getRandomHexColor(),
+          extraYuckLight: getRandomHexColor(),
+        });
+      }, 1000);
+    }
+    return () => {
+      if (intervalId) clearInterval(intervalId);
+    };
+  }, [randomMode]);
+
+  // pick which theme to use
+  const currentTheme = randomMode
+    ? randomTheme
+    : yuckMode
+    ? yuckTheme
+    : offWhiteMode
+    ? offWhiteTheme
+    : darkMode
+    ? darkTheme
+    : colors;
+
+  // top text color is black if offWhite or no theme, otherwise white
+  const isOffWhiteOrNone =
+    offWhiteMode || (!darkMode && !yuckMode && !randomMode);
+  const topTextColor = isOffWhiteOrNone ? "#000" : "#fff";
+
   useEffect(() => {
     if (!currentUser) return;
     const outRef = ref(database, `outgoingRequests/${currentUser.uid}`);
@@ -107,28 +193,31 @@ const Profile = ({ navigation }: any) => {
   // 1) load all known usernames
   useEffect(() => {
     const usersRef = ref(database, "users");
-    return onValue(usersRef, (snapshot) => {
-      const data = snapshot.val();
-      // console.log("Raw users data from Firebase:", data);
-      const userArray: DBUser[] = [];
-  
-      if (data) {
-        Object.entries(data).forEach(([uid, userData]) => {
-          const user = userData as { username?: string };
-          if (user.username) {
-            userArray.push({ uid, username: user.username });
-          }
-        });
-      } else {
-        console.log("No users data found in Firebase");
-      }
-      // console.log("Parsed user array:", userArray);
-      setAllUsers(userArray);
-    }, (error) => {
-      console.error("Error fetching users:", error);
-    });
-  }, []);
+    return onValue(
+      usersRef,
+      (snapshot) => {
+        const data = snapshot.val();
+        // console.log("Raw users data from Firebase:", data);
+        const userArray: DBUser[] = [];
 
+        if (data) {
+          Object.entries(data).forEach(([uid, userData]) => {
+            const user = userData as { username?: string };
+            if (user.username) {
+              userArray.push({ uid, username: user.username });
+            }
+          });
+        } else {
+          console.log("No users data found in Firebase");
+        }
+        // console.log("Parsed user array:", userArray);
+        setAllUsers(userArray);
+      },
+      (error) => {
+        console.error("Error fetching users:", error);
+      }
+    );
+  }, []);
 
   // 2) listen for friend requests + friend list
   useEffect(() => {
@@ -324,18 +413,26 @@ const Profile = ({ navigation }: any) => {
 
   const requestsSectionStyle: ViewStyle = requestsCollapsed
     ? { height: 65, overflow: "hidden" } // Fix: use "hidden" explicitly
-    : { flex: .75 };
+    : { flex: 0.75 };
 
   const friendsSectionStyle: ViewStyle = friendsCollapsed
     ? { height: 65, overflow: "hidden" } // Fix: use "hidden" explicitly
     : { flex: 1 };
 
   return (
-    <SafeAreaView style={styles.flexContainer}>
-      <StatusBar barStyle="light-content" backgroundColor={colors.yuck} />
+    <SafeAreaView
+      style={[
+        styles.flexContainer,
+        { backgroundColor: currentTheme.offWhite2 },
+      ]}
+    >
+      <StatusBar
+        barStyle={isOffWhiteOrNone ? "dark-content" : "light-content"}
+        backgroundColor={currentTheme.offWhite2}
+      />
       {/* gradient background */}
       <LinearGradient
-        colors={[colors.yuck, colors.yuckLight]}
+        colors={[currentTheme.offWhite2, currentTheme.lightGray2]}
         style={StyleSheet.absoluteFillObject}
       />
 
@@ -349,7 +446,9 @@ const Profile = ({ navigation }: any) => {
         </TouchableOpacity>
 
         <View style={styles.headerTitleContainer}>
-          <Text style={styles.headerTitle}>My Friends</Text>
+          <Text style={[styles.headerTitle, { color: topTextColor }]}>
+            My Friends
+          </Text>
         </View>
 
         <View style={styles.headerPlaceholder} />
@@ -647,7 +746,7 @@ const Profile = ({ navigation }: any) => {
 const styles = StyleSheet.create({
   flexContainer: {
     flex: 1,
-    backgroundColor: "#000", // fallback behind gradient
+    // backgroundColor: "#000", // fallback behind gradient
   },
   mainContent: {
     flex: 1,
@@ -658,7 +757,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 15,
     paddingTop: 20,
     paddingBottom: 15,
-    backgroundColor: "rgba(92, 84, 11, 0.9)",
+    // backgroundColor: "rgba(92, 84, 11, 0.9)",
     borderBottomWidth: 1,
     borderBottomColor: "rgba(227, 212, 0, 0.3)",
     elevation: 4,

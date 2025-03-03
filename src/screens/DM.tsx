@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import {
   View,
   Text,
@@ -14,17 +14,26 @@ import {
 } from "react-native";
 import { auth, database } from "../firebase";
 import { ref, onValue, push, set } from "firebase/database";
-import colors from "../../constants/colors";
 import { RouteProp, useNavigation, useRoute } from "@react-navigation/native";
 import { onAuthStateChanged, User } from "firebase/auth";
 import { FontAwesome5 } from "@expo/vector-icons";
 import Icon from "react-native-vector-icons/Feather";
 import { Clipboard } from "react-native";
 
-type DMRouteProp = RouteProp<
-  { DM: { friendUid: string; friendUsername: string } },
-  "DM"
->;
+/* new theme imports */
+import AsyncStorage from "@react-native-async-storage/async-storage";
+import { useFocusEffect } from "@react-navigation/native";
+import {
+  colors,
+  offWhiteTheme,
+  yuckTheme,
+  darkTheme,
+  getRandomHexColor,
+} from "../components/ColorThemes";
+
+const SPLIT_STORAGE_KEY = "@split_state";
+
+type DMRouteProp = RouteProp<{ DM: { friendUid: string; friendUsername: string } }, "DM">;
 
 interface DMMessage {
   key: string;
@@ -39,19 +48,89 @@ const DM = () => {
   const route = useRoute<DMRouteProp>();
   const { friendUid, friendUsername } = route.params;
 
+  // theming
+  const [darkMode, setDarkMode] = useState(false);
+  const [offWhiteMode, setOffWhiteMode] = useState(false);
+  const [yuckMode, setYuckMode] = useState(false);
+  const [randomMode, setRandomMode] = useState(false);
+  const [randomTheme, setRandomTheme] = useState(colors);
+
+  // load theme on focus
+  useFocusEffect(
+    useCallback(() => {
+      const loadTheme = async () => {
+        try {
+          const storedData = await AsyncStorage.getItem(SPLIT_STORAGE_KEY);
+          if (storedData) {
+            const parsed = JSON.parse(storedData);
+            if (parsed?.settings) {
+              setDarkMode(parsed.settings.darkMode ?? false);
+              setOffWhiteMode(parsed.settings.offWhiteMode ?? false);
+              setYuckMode(parsed.settings.yuckMode ?? false);
+              setRandomMode(parsed.settings.randomMode ?? false);
+            }
+          }
+        } catch (err) {
+          console.error("Error loading DM theme:", err);
+        }
+      };
+      loadTheme();
+    }, [])
+  );
+
+  // random color updates
+  useEffect(() => {
+    let intervalId: NodeJS.Timeout;
+    if (randomMode) {
+      intervalId = setInterval(() => {
+        setRandomTheme({
+          white: getRandomHexColor(),
+          offWhite: getRandomHexColor(),
+          offWhite2: getRandomHexColor(),
+          lightGray: getRandomHexColor(),
+          lightGray2: getRandomHexColor(),
+          yellow: getRandomHexColor(),
+          green: getRandomHexColor(),
+          yuck: getRandomHexColor(),
+          yuckLight: getRandomHexColor(),
+          blood: getRandomHexColor(),
+          orange: getRandomHexColor(),
+          gray1: getRandomHexColor(),
+          black: getRandomHexColor(),
+          textDefault: getRandomHexColor(),
+          extraYuckLight: getRandomHexColor(),
+        });
+      }, 1000);
+    }
+    return () => {
+      if (intervalId) clearInterval(intervalId);
+    };
+  }, [randomMode]);
+
+  // pick the theme
+  const currentTheme = randomMode
+    ? randomTheme
+    : yuckMode
+    ? yuckTheme
+    : offWhiteMode
+    ? offWhiteTheme
+    : darkMode
+    ? darkTheme
+    : colors;
+
+  // top text color: black if offWhite or none, else white
+  const isOffWhiteOrNone = offWhiteMode || (!darkMode && !yuckMode && !randomMode);
+  const topTextColor = isOffWhiteOrNone ? "#000" : colors.lightGray2;
+
   const [currentUser, setCurrentUser] = useState<User | null>(auth.currentUser);
   const [myUsername, setMyUsername] = useState<string>("");
   const [messages, setMessages] = useState<DMMessage[]>([]);
   const [newMessageText, setNewMessageText] = useState("");
-  const [expandedMessages, setExpandedMessages] = useState<
-    Record<string, boolean>
-  >({});
+  const [expandedMessages, setExpandedMessages] = useState<Record<string, boolean>>({});
   const [popupVisible, setPopupVisible] = useState(false);
   const [popupX, setPopupX] = useState(0);
   const [popupY, setPopupY] = useState(0);
-  const [longPressedMessage, setLongPressedMessage] = useState<DMMessage | null>(
-    null
-  );
+  const [longPressedMessage, setLongPressedMessage] = useState<DMMessage | null>(null);
   const [lastDMSendTime, setLastDMSendTime] = useState<number>(0);
   const [cooldownMessage, setCooldownMessage] = useState<string | null>(null);
 
@@ -118,12 +197,8 @@ const DM = () => {
     const cooldown = 1000; // 1s for DMs
 
     if (currentTime - lastDMSendTime < cooldown) {
-      const remainingTime = Math.ceil(
-        (cooldown - (currentTime - lastDMSendTime)) / 1000
-      );
-      setCooldownMessage(
-        `Please wait ${remainingTime} second${remainingTime > 1 ? "s" : ""}`
-      );
+      const remainingTime = Math.ceil((cooldown - (currentTime - lastDMSendTime)) / 1000);
+      setCooldownMessage(`Please wait ${remainingTime} second${remainingTime > 1 ? "s" : ""}`);
       setTimeout(() => setCooldownMessage(null), 2000);
       return;
     }
@@ -153,11 +228,7 @@ const DM = () => {
     }));
   };
 
-  const handleBubbleLongPress = (
-    pageX: number,
-    pageY: number,
-    messageItem: DMMessage
-  ) => {
+  const handleBubbleLongPress = (pageX: number, pageY: number, messageItem: DMMessage) => {
     setLongPressedMessage(messageItem);
 
     const screenHeight = Dimensions.get("window").height;
@@ -194,13 +265,24 @@ const DM = () => {
         }}
         style={[
           styles.messageBubble,
-          isOwn ? styles.ownBubble : styles.otherBubble,
+          isOwn ? { backgroundColor: currentTheme.yellow, alignSelf: "flex-end" }
+                : { backgroundColor: currentTheme.offWhite2, alignSelf: "flex-start" },
         ]}
       >
-        <Text style={styles.senderName}>{item.senderName}:</Text>
-        <Text style={styles.messageText}>{item.text}</Text>
+        <Text
+          style={{
+            fontWeight: "bold",
+            color: isOwn ? "#000" : currentTheme.black,
+            marginBottom: 3,
+          }}
+        >
+          {item.senderName}:
+        </Text>
+        <Text style={{ color: isOwn ? "#000" : currentTheme.black }}>
+          {item.text}
+        </Text>
         {isExpanded && (
-          <Text style={isOwn ? styles.selfTimestamp : styles.timestamp}>
+          <Text style={{ marginTop: 5, fontSize: 12, color: isOwn ? "#000" : "#333" }}>
             {new Date(item.timestamp).toLocaleString()}
           </Text>
         )}
@@ -209,22 +291,24 @@ const DM = () => {
   };
 
   return (
-    <View style={styles.container}>
-      <View style={styles.headerContainer}>
+    <View style={[styles.container, { backgroundColor: currentTheme.offWhite2 }]}>
+      {/* header */}
+      <View style={[styles.headerContainer, { backgroundColor: currentTheme.offWhite2 }]}>
         <TouchableOpacity onPress={() => navigation.goBack()}>
           <FontAwesome5
             name="arrow-left"
             size={24}
-            color={colors.yellow}
+            color={currentTheme.yellow}
             style={{ marginRight: 10 }}
           />
         </TouchableOpacity>
-        <Text style={styles.header}>{friendUsername}</Text>
+        {/* friend name in black if offWhite/no theme, white otherwise */}
+        <Text style={[styles.header, { color: topTextColor }]}>{friendUsername}</Text>
         <View style={{ width: 24, marginLeft: 10 }} />
       </View>
 
       <FlatList
-        data={messages}
+        data={[...messages].reverse()} // so that newest at bottom
         renderItem={renderMessage}
         keyExtractor={(item) => item.key}
         contentContainerStyle={styles.messagesContainer}
@@ -237,9 +321,16 @@ const DM = () => {
         </View>
       )}
 
-      <View style={styles.inputArea}>
+      {/* input row */}
+      <View style={[styles.inputArea, { borderTopColor: currentTheme.yellow }]}>
         <TextInput
-          style={styles.input}
+          style={[
+            styles.input,
+            {
+              backgroundColor: darkMode ? "#333" : currentTheme.lightGray2,
+              borderColor: currentTheme.yellow,
+            },
+          ]}
           placeholder="Type a message..."
           placeholderTextColor="#ccc"
           value={newMessageText}
@@ -247,11 +338,15 @@ const DM = () => {
           onSubmitEditing={handleSendMessage}
           returnKeyType="send"
         />
-        <Pressable style={styles.sendButton} onPress={handleSendMessage}>
+        <Pressable
+          style={[styles.sendButton, { backgroundColor: currentTheme.yellow }]}
+          onPress={handleSendMessage}
+        >
           <Text style={styles.sendButtonText}>Send</Text>
         </Pressable>
       </View>
 
+      {/* popup menu for copy */}
       <Modal visible={popupVisible} transparent animationType="fade">
         <TouchableWithoutFeedback onPress={() => setPopupVisible(false)}>
           <View style={styles.modalOverlay} />
@@ -266,17 +361,9 @@ const DM = () => {
               },
             ]}
           >
-            <TouchableOpacity
-              onPress={handleCopyMessage}
-              style={styles.popupItem}
-            >
+            <TouchableOpacity onPress={handleCopyMessage} style={styles.popupItem}>
               <View style={styles.popupItemContent}>
-                <Icon
-                  name="copy"
-                  size={18}
-                  color="#fff"
-                  style={styles.popupIcon}
-                />
+                <Icon name="copy" size={18} color="#fff" style={styles.popupIcon} />
                 <Text style={styles.popupText}>Copy</Text>
               </View>
             </TouchableOpacity>
@@ -289,25 +376,19 @@ const DM = () => {
 
 export default DM;
 
+/* updated styles to remove old references to yuck, etc. */
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: colors.yuck,
   },
   headerContainer: {
     flexDirection: "row",
     alignItems: "center",
     paddingHorizontal: 10,
     paddingVertical: 15,
-    backgroundColor: colors.yuck,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.3,
-    shadowRadius: 3,
     elevation: 4,
   },
   header: {
-    color: "#fff",
     fontSize: 20,
     fontWeight: "bold",
     flex: 1,
@@ -323,32 +404,6 @@ const styles = StyleSheet.create({
     marginBottom: 8,
     padding: 10,
     borderRadius: 8,
-  },
-  ownBubble: {
-    alignSelf: "flex-end",
-    backgroundColor: colors.yellow,
-  },
-  otherBubble: {
-    alignSelf: "flex-start",
-    backgroundColor: "#114B68",
-  },
-  senderName: {
-    fontWeight: "bold",
-    color: "#000",
-    marginBottom: 3,
-  },
-  messageText: {
-    color: "#000",
-  },
-  selfTimestamp: {
-    marginTop: 5,
-    fontSize: 12,
-    color: "black", // Black for current user
-  },
-  timestamp: {
-    marginTop: 5,
-    fontSize: 12,
-    color: "#eee", // Gray for others
   },
   cooldownPopup: {
     position: "absolute",
@@ -369,24 +424,20 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     padding: 10,
     borderTopWidth: 1,
-    borderTopColor: colors.yellow,
-    alignItems: "center", // Matches Chat.tsx
+    alignItems: "center",
   },
   input: {
     flex: 1,
-    paddingVertical: 8, // Matches Chat.tsx
-    paddingHorizontal: 12, // Matches Chat.tsx
+    paddingVertical: 8,
+    paddingHorizontal: 12,
     borderRadius: 20,
-    backgroundColor: "#114B68",
     marginRight: 8,
-    borderColor: colors.yellow,
     borderWidth: 1,
     color: "white",
   },
   sendButton: {
-    paddingVertical: 10, // Matches Chat.tsx
+    paddingVertical: 10,
     paddingHorizontal: 16,
-    backgroundColor: colors.yellow,
     borderRadius: 20,
     justifyContent: "center",
   },

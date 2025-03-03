@@ -9,6 +9,7 @@ import {
   Pressable,
   TouchableWithoutFeedback,
   StyleSheet,
+  StatusBar,
 } from "react-native";
 import { FontAwesome5 } from "@expo/vector-icons";
 import { useEffect } from "react";
@@ -53,12 +54,17 @@ const SettingsButton: React.FC<SettingsButtonProps> = ({
         const cachedDarkMode = await AsyncStorage.getItem("darkMode");
         const cachedOffWhiteMode = await AsyncStorage.getItem("offWhiteMode");
         const cachedRandomMode = await AsyncStorage.getItem("randomMode");
-  
+
         // If user has changed the theme before, do nothing
         if (themeChanged) return;
-  
+
         // If no themes are set, default to Yuck Mode and mark the theme as changed
-        if (!cachedYuckMode && !cachedDarkMode && !cachedOffWhiteMode && !cachedRandomMode) {
+        if (
+          !cachedYuckMode &&
+          !cachedDarkMode &&
+          !cachedOffWhiteMode &&
+          !cachedRandomMode
+        ) {
           setYuckMode(true);
           await AsyncStorage.setItem("themeChanged", "true"); // Prevent defaulting again
         }
@@ -66,11 +72,32 @@ const SettingsButton: React.FC<SettingsButtonProps> = ({
         console.error("Error loading theme setting:", error);
       }
     };
-  
+
     loadThemeSetting();
   }, []);
-  
-  
+
+  useEffect(() => {
+    if (showSettings) {
+      StatusBar.setBarStyle("light-content"); // Make status bar text white when modal is open
+      // StatusBar.setBackgroundColor("rgba(0,0,0,0.3)"); // Match the overlay color
+    } else {
+      // figure out if your theme should be light-content or dark-content
+      // for instance: if darkMode || yuckMode || randomMode => light-content
+      // else if offWhite => dark-content
+      // tweak as you see fit
+      let barStyle: "light-content" | "dark-content" = "dark-content";
+
+      if (darkMode || yuckMode || randomMode) {
+        barStyle = "light-content";
+      } else {
+        // offWhite or default => dark-content
+        barStyle = "dark-content";
+      }
+
+      StatusBar.setBarStyle(barStyle);
+      StatusBar.setBackgroundColor(currentTheme.offWhite2);
+    }
+  }, [showSettings, darkMode, currentTheme]);
 
   let modalBackgroundColor = "#ffffff";
   let modalTextColor = "#000000";

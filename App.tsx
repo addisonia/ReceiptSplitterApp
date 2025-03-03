@@ -5,7 +5,13 @@ import { NavigationContainer } from "@react-navigation/native";
 import { createNativeStackNavigator } from "@react-navigation/native-stack";
 import { createMaterialTopTabNavigator } from "@react-navigation/material-top-tabs";
 import * as Font from "expo-font";
-import { View, ActivityIndicator, StatusBar, SafeAreaView } from "react-native";
+import {
+  View,
+  ActivityIndicator,
+  SafeAreaView,
+  Platform,
+  StatusBar,
+} from "react-native";
 import Home from "./src/screens/Home";
 import Split from "./src/screens/Split";
 import Snake from "./src/screens/Snake";
@@ -22,7 +28,6 @@ import UploadReceipt from "./src/screens/UploadReceipt";
 const Tab = createMaterialTopTabNavigator();
 const Stack = createNativeStackNavigator();
 
-// main tabs for home and split screens
 const MainTabs = () => {
   return (
     <Tab.Navigator
@@ -44,7 +49,7 @@ export type RootStackParamList = {
   Snake: undefined;
   Receipts: undefined;
   ImportReceipts: undefined;
-  MainTabs: { screen: "Home" | "Split" | "Chat" } | undefined; // Modified type definition for MainTabs
+  MainTabs: { screen: "Home" | "Split" | "Chat" } | undefined;
   Chat: undefined;
 };
 
@@ -85,24 +90,31 @@ function App() {
   }
 
   return (
-    <SafeAreaView style={{ flex: 1, backgroundColor: colors.yuck }}>
-      <StatusBar backgroundColor={colors.yuck} barStyle="light-content" />
+    <SafeAreaView
+      style={{
+        flex: 1,
+        // backgroundColor: colors.yuck,
+        paddingTop: Platform.OS === "android" ? StatusBar.currentHeight : 0,
+      }}
+    >
+      {/* <StatusBar barStyle="light-content" backgroundColor={colors.yuck} /> */}
       <NavigationContainer>
-        <Stack.Navigator screenOptions={{ headerShown: false }}>
+        <Stack.Navigator
+          screenOptions={{
+            headerShown: false,
+            // statusBarStyle: "light", 
+          }}
+        >
           <Stack.Screen name="MainTabs" component={MainTabs} />
           <Stack.Screen
             name="Snake"
             component={Snake}
-            options={{
-              gestureEnabled: true,
-            }}
+            options={{ gestureEnabled: true }}
           />
           <Stack.Screen
             name="Receipts"
             component={Receipts}
-            options={{
-              gestureEnabled: true, // enables iOS swipe back
-            }}
+            options={{ gestureEnabled: true }}
           />
           <Stack.Screen
             name="ImportReceipts"
@@ -112,29 +124,23 @@ function App() {
           <Stack.Screen
             name="Profile"
             component={Profile}
-            options={{
-              gestureEnabled: true,
-            }}
+            options={{ gestureEnabled: true }}
           />
           <Stack.Screen
             name="GroupChat"
             component={GroupChat}
-            options={{
-              gestureEnabled: true,
-            }}
+            options={{ gestureEnabled: true }}
           />
           <Stack.Screen
             name="DM"
             component={DM}
-            options={{
-              gestureEnabled: true,
-            }}
+            options={{ gestureEnabled: true }}
           />
           <Stack.Screen
             name="UploadReceipt"
             component={UploadReceipt}
             options={{ gestureEnabled: true }}
-          ></Stack.Screen>
+          />
         </Stack.Navigator>
       </NavigationContainer>
     </SafeAreaView>
