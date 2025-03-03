@@ -1,4 +1,3 @@
-// screens/DM.tsx
 import React, { useState, useEffect } from "react";
 import {
   View,
@@ -22,7 +21,6 @@ import { FontAwesome5 } from "@expo/vector-icons";
 import Icon from "react-native-vector-icons/Feather";
 import { Clipboard } from "react-native";
 
-// define route params for DM
 type DMRouteProp = RouteProp<
   { DM: { friendUid: string; friendUsername: string } },
   "DM"
@@ -48,13 +46,14 @@ const DM = () => {
   const [expandedMessages, setExpandedMessages] = useState<
     Record<string, boolean>
   >({});
-  // Popup menu state
   const [popupVisible, setPopupVisible] = useState(false);
   const [popupX, setPopupX] = useState(0);
   const [popupY, setPopupY] = useState(0);
   const [longPressedMessage, setLongPressedMessage] = useState<DMMessage | null>(
     null
   );
+  const [lastDMSendTime, setLastDMSendTime] = useState<number>(0);
+  const [cooldownMessage, setCooldownMessage] = useState<string | null>(null);
 
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, (user) => {
@@ -63,7 +62,6 @@ const DM = () => {
     return () => unsub();
   }, []);
 
-  // fetch my username
   useEffect(() => {
     if (!currentUser) return;
     const userRef = ref(database, `users/${currentUser.uid}/username`);
@@ -75,14 +73,12 @@ const DM = () => {
     return () => unsub();
   }, [currentUser]);
 
-  // conversation key
   let conversationId = "";
   if (currentUser?.uid) {
     const sortedIds = [currentUser.uid, friendUid].sort();
     conversationId = `${sortedIds[0]}_${sortedIds[1]}`;
   }
 
-  // load messages
   useEffect(() => {
     if (!conversationId) return;
 
@@ -118,18 +114,35 @@ const DM = () => {
     if (!currentUser || !conversationId) return;
     if (!newMessageText.trim()) return;
 
+    const currentTime = Date.now();
+    const cooldown = 1000; // 1s for DMs
+
+    if (currentTime - lastDMSendTime < cooldown) {
+      const remainingTime = Math.ceil(
+        (cooldown - (currentTime - lastDMSendTime)) / 1000
+      );
+      setCooldownMessage(
+        `Please wait ${remainingTime} second${remainingTime > 1 ? "s" : ""}`
+      );
+      setTimeout(() => setCooldownMessage(null), 2000);
+      return;
+    }
+
     const dmRef = ref(database, `DMs/${conversationId}`);
     const newMessageRef = push(dmRef);
 
     const messagePayload = {
       text: newMessageText.trim(),
-      timestamp: Date.now(),
+      timestamp: currentTime,
       senderUid: currentUser.uid,
       senderName: myUsername || "Unknown",
     };
 
     set(newMessageRef, messagePayload)
-      .then(() => setNewMessageText(""))
+      .then(() => {
+        setNewMessageText("");
+        setLastDMSendTime(currentTime);
+      })
       .catch((err) => console.log("Error sending DM message:", err));
   };
 
@@ -147,15 +160,13 @@ const DM = () => {
   ) => {
     setLongPressedMessage(messageItem);
 
-    // Get screen dimensions
     const screenHeight = Dimensions.get("window").height;
-    const inputAreaHeight = 70; // Approximate height of inputArea based on styles
-    const popupHeight = 60; // Approximate height of popup with one item
+    const inputAreaHeight = 70;
+    const popupHeight = 60;
 
-    // Adjust popupY to stay above input area
     const adjustedY = Math.min(
       pageY,
-      screenHeight - inputAreaHeight - popupHeight - 10 // 10 for padding
+      screenHeight - inputAreaHeight - popupHeight - 10
     );
 
     setPopupX(pageX);
@@ -189,7 +200,7 @@ const DM = () => {
         <Text style={styles.senderName}>{item.senderName}:</Text>
         <Text style={styles.messageText}>{item.text}</Text>
         {isExpanded && (
-          <Text style={styles.timestamp}>
+          <Text style={isOwn ? styles.selfTimestamp : styles.timestamp}>
             {new Date(item.timestamp).toLocaleString()}
           </Text>
         )}
@@ -199,7 +210,6 @@ const DM = () => {
 
   return (
     <View style={styles.container}>
-      {/* top bar with left arrow and DM title */}
       <View style={styles.headerContainer}>
         <TouchableOpacity onPress={() => navigation.goBack()}>
           <FontAwesome5
@@ -210,7 +220,6 @@ const DM = () => {
           />
         </TouchableOpacity>
         <Text style={styles.header}>{friendUsername}</Text>
-        {/* put an empty view to help center the text if needed */}
         <View style={{ width: 24, marginLeft: 10 }} />
       </View>
 
@@ -221,6 +230,12 @@ const DM = () => {
         contentContainerStyle={styles.messagesContainer}
         inverted
       />
+
+      {cooldownMessage && (
+        <View style={styles.cooldownPopup}>
+          <Text style={styles.cooldownText}>{cooldownMessage}</Text>
+        </View>
+      )}
 
       <View style={styles.inputArea}>
         <TextInput
@@ -237,7 +252,6 @@ const DM = () => {
         </Pressable>
       </View>
 
-      {/* Popup menu */}
       <Modal visible={popupVisible} transparent animationType="fade">
         <TouchableWithoutFeedback onPress={() => setPopupVisible(false)}>
           <View style={styles.modalOverlay} />
@@ -252,7 +266,10 @@ const DM = () => {
               },
             ]}
           >
-            <TouchableOpacity onPress={handleCopyMessage} style={styles.popupItem}>
+            <TouchableOpacity
+              onPress={handleCopyMessage}
+              style={styles.popupItem}
+            >
               <View style={styles.popupItemContent}>
                 <Icon
                   name="copy"
@@ -287,7 +304,7 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.3,
     shadowRadius: 3,
-    elevation: 4, // same shadow as global chat
+    elevation: 4,
   },
   header: {
     color: "#fff",
@@ -317,37 +334,60 @@ const styles = StyleSheet.create({
   },
   senderName: {
     fontWeight: "bold",
-    color: "#000", // visible on yellow or dark
+    color: "#000",
     marginBottom: 3,
   },
   messageText: {
     color: "#000",
   },
+  selfTimestamp: {
+    marginTop: 5,
+    fontSize: 12,
+    color: "black", // Black for current user
+  },
   timestamp: {
     marginTop: 5,
     fontSize: 12,
-    color: "#eee",
+    color: "#eee", // Gray for others
+  },
+  cooldownPopup: {
+    position: "absolute",
+    bottom: 70,
+    left: 10,
+    right: 10,
+    backgroundColor: "rgba(128, 128, 128, 0.9)",
+    padding: 10,
+    borderRadius: 8,
+    alignItems: "center",
+  },
+  cooldownText: {
+    color: "white",
+    fontSize: 14,
+    fontWeight: "bold",
   },
   inputArea: {
     flexDirection: "row",
     padding: 10,
     borderTopWidth: 1,
     borderTopColor: colors.yellow,
+    alignItems: "center", // Matches Chat.tsx
   },
   input: {
     flex: 1,
+    paddingVertical: 8, // Matches Chat.tsx
+    paddingHorizontal: 12, // Matches Chat.tsx
     borderRadius: 20,
     backgroundColor: "#114B68",
     marginRight: 8,
     borderColor: colors.yellow,
     borderWidth: 1,
     color: "white",
-    paddingHorizontal: 10,
   },
   sendButton: {
+    paddingVertical: 10, // Matches Chat.tsx
+    paddingHorizontal: 16,
     backgroundColor: colors.yellow,
     borderRadius: 20,
-    paddingHorizontal: 16,
     justifyContent: "center",
   },
   sendButtonText: {
@@ -355,7 +395,6 @@ const styles = StyleSheet.create({
     fontWeight: "bold",
     fontSize: 16,
   },
-  // Popup styles (borrowed from Chat.tsx)
   modalOverlay: {
     flex: 1,
     backgroundColor: "rgba(0, 0, 0, 0.6)",

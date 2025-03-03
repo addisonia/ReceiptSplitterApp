@@ -87,6 +87,13 @@
 
 // export default GoogleSignInButton;
 
+
+
+
+
+
+
+
 import React from "react";
 import {
   Pressable,
@@ -104,7 +111,6 @@ import { auth } from "../firebase";
 import { signInWithCredential, GoogleAuthProvider } from "firebase/auth";
 import colors from "../../constants/colors";
 import { FontAwesome5 } from "@expo/vector-icons";
-import { ANDROID_CLIENT_ID } from "@env";
 import { WEB_CLIENT_ID } from "@env";
 
 interface GoogleSignInButtonProps {
@@ -139,16 +145,14 @@ const GoogleSignInButton: React.FC<GoogleSignInButtonProps> = ({
       await GoogleSignin.hasPlayServices();
       console.log("Play services available");
 
-      // Sign out to force account picker
+      // Sign out from Google to force account picker (doesn’t affect Firebase)
       await GoogleSignin.signOut();
-      console.log("Signed out successfully");
+      console.log("Signed out from Google successfully");
 
-      // Sign in with Google
+      // Sign in with Google (this will show the account picker)
       console.log("Attempting to sign in with Google...");
       const response = await GoogleSignin.signIn();
-      // console.log("Google sign in successful:", response);
-
-      const idToken = response.data?.idToken; // Try this format
+      const idToken = response.data?.idToken;
       if (!idToken) {
         console.log("Response structure:", JSON.stringify(response));
         throw new Error("No ID token returned");

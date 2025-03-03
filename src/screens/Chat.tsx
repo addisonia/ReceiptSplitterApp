@@ -179,6 +179,10 @@ const Chat = () => {
     Record<string, boolean>
   >({});
 
+  // New state for slow chat feature
+  const [lastGlobalSendTime, setLastGlobalSendTime] = useState<number>(0);
+  const [lastGroupSendTime, setLastGroupSendTime] = useState<number>(0);
+
   /* friend-related state */
   const [myFriends, setMyFriends] = useState<Record<string, string>>({});
   const [outgoingRequests, setOutgoingRequests] = useState<Set<string>>(
@@ -201,6 +205,7 @@ const Chat = () => {
     []
   );
   const [dropdownOpen, setDropdownOpen] = useState(false);
+  const [cooldownMessage, setCooldownMessage] = useState<string | null>(null);
 
   /* color palette for other users */
   const userColors = [
@@ -429,25 +434,46 @@ const Chat = () => {
 
   const handleSendMessage = () => {
     if (!isSignedIn) {
-      alert("Sign in to send messages.");
+      setCooldownMessage("Sign in to send messages.");
+      setTimeout(() => setCooldownMessage(null), 2000); // Clear after 2s
       return;
     }
     if (!username || username === "Loading...") {
-      alert("Waiting for username. Try again soon.");
+      setCooldownMessage("Waiting for username. Try again soon.");
+      setTimeout(() => setCooldownMessage(null), 2000);
       return;
     }
     if (!newMessageText.trim()) return;
 
-    if (selectedChat === "global") {
+    const currentTime = Date.now();
+    const isGlobalChat = selectedChat === "global";
+    const lastSendTime = isGlobalChat ? lastGlobalSendTime : lastGroupSendTime;
+    const cooldown = isGlobalChat ? 5000 : 1000; // 5s for global, 1s for group
+
+    if (currentTime - lastSendTime < cooldown) {
+      const remainingTime = Math.ceil(
+        (cooldown - (currentTime - lastSendTime)) / 1000
+      );
+      setCooldownMessage(
+        `Please wait ${remainingTime} second${remainingTime > 1 ? "s" : ""}`
+      );
+      setTimeout(() => setCooldownMessage(null), 2000);
+      return;
+    }
+
+    if (isGlobalChat) {
       const messagesRef = ref(database, `chat/messages/${username}`);
       const newMessageRef = push(messagesRef);
       const messagePayload = {
         text: newMessageText.trim(),
         senderName: username,
-        timestamp: Date.now(),
+        timestamp: currentTime,
         senderUid: user?.uid || "unknown-uid",
       };
-      set(newMessageRef, messagePayload).then(() => setNewMessageText(""));
+      set(newMessageRef, messagePayload).then(() => {
+        setNewMessageText("");
+        setLastGlobalSendTime(currentTime);
+      });
     } else {
       const groupMessagesRef = ref(
         database,
@@ -457,10 +483,13 @@ const Chat = () => {
       const messagePayload = {
         text: newMessageText.trim(),
         senderName: username,
-        timestamp: Date.now(),
+        timestamp: currentTime,
         senderUid: user?.uid || "unknown-uid",
       };
-      set(newGroupMsgRef, messagePayload).then(() => setNewMessageText(""));
+      set(newGroupMsgRef, messagePayload).then(() => {
+        setNewMessageText("");
+        setLastGroupSendTime(currentTime);
+      });
     }
   };
 
@@ -955,6 +984,12 @@ const Chat = () => {
         windowSize={5}
       />
 
+      {cooldownMessage && (
+        <View style={styles.cooldownPopup}>
+          <Text style={styles.cooldownText}>{cooldownMessage}</Text>
+        </View>
+      )}
+
       {/* input row */}
       <View style={styles.inputArea}>
         {selectedChat !== "global" && (
@@ -1172,6 +1207,21 @@ const styles = StyleSheet.create({
     marginTop: 5,
     fontSize: 12,
     color: "#333",
+  },
+  cooldownPopup: {
+    position: "absolute",
+    bottom: 70, // Above inputArea
+    left: 10,
+    right: 10,
+    backgroundColor: "rgba(128, 128, 128, 0.9)", // Gray with slight transparency
+    padding: 10,
+    borderRadius: 8,
+    alignItems: "center",
+  },
+  cooldownText: {
+    color: "white",
+    fontSize: 14,
+    fontWeight: "bold",
   },
   inputArea: {
     flexDirection: "row",
