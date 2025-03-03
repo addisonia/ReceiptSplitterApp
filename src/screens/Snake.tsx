@@ -819,7 +819,7 @@ const styles = StyleSheet.create({
   verticalButtons: {
     /* vertical buttons container style */
     flexDirection: "column",
-    flex: 1,
+    flex: 1.2,
   },
   arrowButton: {
     /* arrow button style */
@@ -830,6 +830,7 @@ const styles = StyleSheet.create({
     paddingVertical: 18,
     flex: 1,
     alignItems: "center",
+    justifyContent: "center",
   },
 
   buttonText: {
