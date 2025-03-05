@@ -24,6 +24,7 @@ import Profile from "./src/screens/Profile";
 import GroupChat from "./src/screens/GroupChat";
 import DM from "./src/screens/DM";
 import UploadReceipt from "./src/screens/UploadReceipt";
+import { ThemeProvider } from "./src/context/ThemeContext";
 
 const Tab = createMaterialTopTabNavigator();
 const Stack = createNativeStackNavigator();
@@ -90,60 +91,62 @@ function App() {
   }
 
   return (
-    <SafeAreaView
-      style={{
-        flex: 1,
-        // backgroundColor: colors.yuck,
-        paddingTop: Platform.OS === "android" ? StatusBar.currentHeight : 0,
-      }}
-    >
-      {/* <StatusBar barStyle="light-content" backgroundColor={colors.yuck} /> */}
-      <NavigationContainer>
-        <Stack.Navigator
-          screenOptions={{
-            headerShown: false,
-            // statusBarStyle: "light", 
-          }}
-        >
-          <Stack.Screen name="MainTabs" component={MainTabs} />
-          <Stack.Screen
-            name="Snake"
-            component={Snake}
-            options={{ gestureEnabled: true }}
-          />
-          <Stack.Screen
-            name="Receipts"
-            component={Receipts}
-            options={{ gestureEnabled: true }}
-          />
-          <Stack.Screen
-            name="ImportReceipts"
-            component={ImportReceipts}
-            options={{ gestureEnabled: true }}
-          />
-          <Stack.Screen
-            name="Profile"
-            component={Profile}
-            options={{ gestureEnabled: true }}
-          />
-          <Stack.Screen
-            name="GroupChat"
-            component={GroupChat}
-            options={{ gestureEnabled: true }}
-          />
-          <Stack.Screen
-            name="DM"
-            component={DM}
-            options={{ gestureEnabled: true }}
-          />
-          <Stack.Screen
-            name="UploadReceipt"
-            component={UploadReceipt}
-            options={{ gestureEnabled: true }}
-          />
-        </Stack.Navigator>
-      </NavigationContainer>
-    </SafeAreaView>
+    <ThemeProvider>
+      <SafeAreaView
+        style={{
+          flex: 1,
+          // backgroundColor: colors.yuck,
+          paddingTop: Platform.OS === "android" ? StatusBar.currentHeight : 0,
+        }}
+      >
+        {/* <StatusBar barStyle="light-content" backgroundColor={colors.yuck} /> */}
+        <NavigationContainer>
+          <Stack.Navigator
+            screenOptions={{
+              headerShown: false,
+              // statusBarStyle: "light",
+            }}
+          >
+            <Stack.Screen name="MainTabs" component={MainTabs} />
+            <Stack.Screen
+              name="Snake"
+              component={Snake}
+              options={{ gestureEnabled: true }}
+            />
+            <Stack.Screen
+              name="Receipts"
+              component={Receipts}
+              options={{ gestureEnabled: true }}
+            />
+            <Stack.Screen
+              name="ImportReceipts"
+              component={ImportReceipts}
+              options={{ gestureEnabled: true }}
+            />
+            <Stack.Screen
+              name="Profile"
+              component={Profile}
+              options={{ gestureEnabled: true }}
+            />
+            <Stack.Screen
+              name="GroupChat"
+              component={GroupChat}
+              options={{ gestureEnabled: true }}
+            />
+            <Stack.Screen
+              name="DM"
+              component={DM}
+              options={{ gestureEnabled: true }}
+            />
+            <Stack.Screen
+              name="UploadReceipt"
+              component={UploadReceipt}
+              options={{ gestureEnabled: true }}
+            />
+          </Stack.Navigator>
+        </NavigationContainer>
+      </SafeAreaView>
+    </ThemeProvider>
   );
 }
 

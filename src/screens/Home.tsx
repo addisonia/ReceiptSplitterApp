@@ -22,6 +22,7 @@ import GoogleSignInButton from "../components/GoogleSignInButton";
 import { auth, database } from "../firebase";
 import { User, signOut } from "firebase/auth";
 import PrivacyPolicy from "../components/PrivacyPolicy";
+import { useTheme } from "../context/ThemeContext";
 // removed: no longer importing `child` or `onValue`; we only use get() and update().
 import { ref, get, update } from "firebase/database";
 import Receipts from "./Receipts";
@@ -51,6 +52,11 @@ const generatedForUid: { [uid: string]: boolean } = {};
 const Home = () => {
   const navigation = useNavigation<HomeScreenNavigationProp>();
 
+  const { theme, mode } = useTheme();
+
+  const titleTextColor =
+    mode === "yuck" ? "#ffffff" : mode === "dark" ? "#ede7d8" : mode === "offWhite" || mode === "default" ? "#000" : theme.lightGray2;
+
   const [user, setUser] = useState<User | null>(null);
   const [isSignInModalVisible, setSignInModalVisible] = useState(false);
 
@@ -67,12 +73,6 @@ const Home = () => {
   const [buttonBgColor, setButtonBgColor] = useState(colors.yellow);
   const [isPrivacyModalVisible, setPrivacyModalVisible] = useState(false);
 
-  const [darkMode, setDarkMode] = useState(false);
-  const [offWhiteMode, setOffWhiteMode] = useState(false);
-  const [yuckMode, setYuckMode] = useState(false);
-  const [randomMode, setRandomMode] = useState(false);
-  const [randomTheme, setRandomTheme] = useState(colors);
-
   // load theme from AsyncStorage on mount
   useEffect(() => {
     (async () => {
@@ -80,86 +80,12 @@ const Home = () => {
         const storedData = await AsyncStorage.getItem(SPLIT_STORAGE_KEY);
         if (storedData) {
           const parsed = JSON.parse(storedData);
-          if (parsed?.settings) {
-            setDarkMode(parsed.settings.darkMode ?? false);
-            setOffWhiteMode(parsed.settings.offWhiteMode ?? false);
-            setYuckMode(parsed.settings.yuckMode ?? false);
-            setRandomMode(parsed.settings.randomMode ?? false);
-          }
         }
       } catch (error) {
         console.log("Error loading theme:", error);
       }
     })();
   }, []);
-
-  // if randomMode is on, update colors every second (like in Split)
-  useEffect(() => {
-    let intervalId: NodeJS.Timeout;
-    if (randomMode) {
-      intervalId = setInterval(() => {
-        setRandomTheme({
-          white: getRandomHexColor(),
-          offWhite: getRandomHexColor(),
-          offWhite2: getRandomHexColor(),
-          lightGray: getRandomHexColor(),
-          lightGray2: getRandomHexColor(),
-          yellow: getRandomHexColor(),
-          green: getRandomHexColor(),
-          yuck: getRandomHexColor(),
-          yuckLight: getRandomHexColor(),
-          blood: getRandomHexColor(),
-          orange: getRandomHexColor(),
-          gray1: getRandomHexColor(),
-          black: getRandomHexColor(),
-          textDefault: getRandomHexColor(),
-          extraYuckLight: getRandomHexColor(),
-        });
-      }, 1000);
-    }
-    return () => {
-      if (intervalId) clearInterval(intervalId);
-    };
-  }, [randomMode]);
-
-  // figure out which theme object to use
-  const currentTheme = randomMode
-    ? randomTheme
-    : yuckMode
-    ? yuckTheme
-    : offWhiteMode
-    ? offWhiteTheme
-    : darkMode
-    ? darkTheme
-    : colors;
-
-  // pick a text color for "Receipt" / "Splitter"
-  const titleTextColor =
-    offWhiteMode || (!darkMode && !yuckMode && !randomMode)
-      ? "#000" // black
-      : colors.lightGray2; // white (or whatever color you want in dark/yuck/random)
-
-  useFocusEffect(
-    useCallback(() => {
-      const loadTheme = async () => {
-        try {
-          const storedData = await AsyncStorage.getItem(SPLIT_STORAGE_KEY);
-          if (storedData) {
-            const parsed = JSON.parse(storedData);
-            if (parsed?.settings) {
-              setDarkMode(parsed.settings.darkMode ?? false);
-              setOffWhiteMode(parsed.settings.offWhiteMode ?? false);
-              setYuckMode(parsed.settings.yuckMode ?? false);
-              setRandomMode(parsed.settings.randomMode ?? false);
-            }
-          }
-        } catch (error) {
-          console.log("Error loading theme:", error);
-        }
-      };
-      loadTheme();
-    }, [])
-  );
 
   useEffect(() => {
     const unsubscribeAuth = auth.onAuthStateChanged(async (currentUser) => {
@@ -384,9 +310,7 @@ const Home = () => {
   };
 
   return (
-    <View
-      style={[styles.container, { backgroundColor: currentTheme.offWhite2 }]}
-    >
+    <View style={[styles.container, { backgroundColor: theme.offWhite2 }]}>
       {/* icon row */}
       <View style={styles.iconRow}>
         <Pressable

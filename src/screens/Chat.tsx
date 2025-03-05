@@ -1,4 +1,4 @@
-// chat.tsx
+// src/screens/Chat.tsx
 import React, { useState, useEffect, useCallback } from "react";
 import {
   View,
@@ -14,7 +14,6 @@ import {
   Dimensions,
   Alert,
   Animated,
-  Clipboard,
 } from "react-native";
 import { FontAwesome } from "@expo/vector-icons";
 import { auth, database } from "../firebase";
@@ -25,21 +24,13 @@ import { useNavigation, useFocusEffect } from "@react-navigation/native";
 import { RootStackParamList } from "../types/RootStackParams";
 import { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import Icon from "react-native-vector-icons/Feather";
-import AsyncStorage from "@react-native-async-storage/async-storage";
-import {
-  colors,
-  offWhiteTheme,
-  yuckTheme,
-  darkTheme,
-  getRandomHexColor,
-} from "../components/ColorThemes";
+import { useTheme } from "../context/ThemeContext";
+import { colors } from "../components/ColorThemes";
 
 const SPLIT_STORAGE_KEY = "@split_state";
 
-/* define route type */
 type ChatNavProp = NativeStackNavigationProp<RootStackParamList, "Chat">;
 
-/* define the firebase shape for each message */
 interface FirebaseMessageData {
   senderName?: string;
   text?: string;
@@ -49,7 +40,6 @@ interface FirebaseMessageData {
   receiptData?: any;
 }
 
-/* define your local message type */
 interface Message {
   key: string;
   senderName: string;
@@ -67,7 +57,6 @@ interface GroupChatData {
   participants: Record<string, boolean>;
 }
 
-/* define the shape for receipt data, if applicable */
 type ReceiptData = {
   name: string;
   items: ItemType[];
@@ -169,13 +158,13 @@ function normalizeReceiptData(receiptKey: string, rawData: any): ReceiptData {
 }
 
 const Chat = () => {
+  const { theme, mode } = useTheme();
   const navigation = useNavigation<ChatNavProp>();
 
   const [user, setUser] = useState<User | null>(null);
   const [username, setUsername] = useState<string | null>(null);
   const [isSignedIn, setIsSignedIn] = useState(false);
 
-  /* tracking messages and group selection */
   const [messages, setMessages] = useState<Message[]>([]);
   const [selectedChat, setSelectedChat] = useState("global");
   const [groupChatsMap, setGroupChatsMap] = useState<
@@ -188,17 +177,14 @@ const Chat = () => {
     Record<string, boolean>
   >({});
 
-  // New state for slow chat feature
   const [lastGlobalSendTime, setLastGlobalSendTime] = useState<number>(0);
   const [lastGroupSendTime, setLastGroupSendTime] = useState<number>(0);
 
-  /* friend-related state */
   const [myFriends, setMyFriends] = useState<Record<string, string>>({});
   const [outgoingRequests, setOutgoingRequests] = useState<Set<string>>(
     new Set()
   );
 
-  /* popup menu */
   const [popupVisible, setPopupVisible] = useState(false);
   const [popupX, setPopupX] = useState(0);
   const [popupY, setPopupY] = useState(0);
@@ -209,136 +195,44 @@ const Chat = () => {
     null
   );
 
-  /* group participants (for the group header list) */
   const [participantUsernames, setParticipantUsernames] = useState<string[]>(
     []
   );
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const [cooldownMessage, setCooldownMessage] = useState<string | null>(null);
 
-  /* color palette for other users */
   const userColors = [
-    "#c177d9", // Lavender Purple
-    "#77d997", // Mint Green
-    "#d97777", // Soft Red
-    "#d9d177", // Pale Yellow
-    "#77b7d9", // Sky Blue
-    "#a477d9", // Medium Purple
-    "#d9a477", // Peach
-    "#9afbfc", // Aqua
-    "#ff9a76", // Coral
-    "#baff66", // Lime Green
-    "#ff66dc", // Hot Pink
-    "#66ffed", // Turquoise
-    "#ffee66", // Bright Yellow
-    "#ff6666", // Bright Red
-    "#66c7ff", // Electric Blue
-    "#d966ff", // Vibrant Purple
-    "#ffb266", // Orange
-    "#66ff8c", // Neon Green
-    "#ff66a3", // Pink
-    "#c4ff66", // Chartreuse
+    "#c177d9",
+    "#77d997",
+    "#d97777",
+    "#d9d177",
+    "#77b7d9",
+    "#a477d9",
+    "#d9a477",
+    "#9afbfc",
+    "#ff9a76",
+    "#baff66",
+    "#ff66dc",
+    "#66ffed",
+    "#ffee66",
+    "#ff6666",
+    "#66c7ff",
+    "#d966ff",
+    "#ffb266",
+    "#66ff8c",
+    "#ff66a3",
+    "#c4ff66",
   ];
 
-  /* state for user->color map */
   const [assignedColors, setAssignedColors] = useState<{
     [name: string]: string;
   }>({});
 
-  // new theme states
-  const [darkMode, setDarkMode] = useState(false);
-  const [offWhiteMode, setOffWhiteMode] = useState(false);
-  const [yuckMode, setYuckMode] = useState(false);
-  const [randomMode, setRandomMode] = useState(false);
-  const [randomTheme, setRandomTheme] = useState(colors);
-
-  // Just like in Split: if randomMode, set up an interval to update random colors
-  useEffect(() => {
-    let intervalId: NodeJS.Timeout;
-    if (randomMode) {
-      intervalId = setInterval(() => {
-        setRandomTheme({
-          white: getRandomHexColor(),
-          offWhite: getRandomHexColor(),
-          offWhite2: getRandomHexColor(),
-          lightGray: getRandomHexColor(),
-          lightGray2: getRandomHexColor(),
-          yellow: getRandomHexColor(),
-          green: getRandomHexColor(),
-          yuck: getRandomHexColor(),
-          yuckLight: getRandomHexColor(),
-          blood: getRandomHexColor(),
-          orange: getRandomHexColor(),
-          gray1: getRandomHexColor(),
-          black: getRandomHexColor(),
-          textDefault: getRandomHexColor(),
-          extraYuckLight: getRandomHexColor(),
-        });
-      }, 1000);
-    }
-    return () => {
-      if (intervalId) clearInterval(intervalId);
-    };
-  }, [randomMode]);
-
-  // function to load theme from AsyncStorage
-  async function loadThemeFromStorage() {
-    try {
-      const storedData = await AsyncStorage.getItem(SPLIT_STORAGE_KEY);
-      if (storedData) {
-        const parsed = JSON.parse(storedData);
-        if (parsed?.settings) {
-          setDarkMode(parsed.settings.darkMode ?? false);
-          setOffWhiteMode(parsed.settings.offWhiteMode ?? false);
-          setYuckMode(parsed.settings.yuckMode ?? false);
-          setRandomMode(parsed.settings.randomMode ?? false);
-        }
-      }
-    } catch (error) {
-      console.log("Error loading chat theme:", error);
-    }
-  }
-
-  // useFocusEffect so we re-check theme whenever Chat is focused
-  useFocusEffect(
-    useCallback(() => {
-      loadThemeFromStorage();
-    }, [])
-  );
-
-  // figure out current theme
-  const currentTheme = randomMode
-    ? randomTheme
-    : yuckMode
-    ? yuckTheme
-    : offWhiteMode
-    ? offWhiteTheme
-    : darkMode
-    ? darkTheme
-    : colors;
-
-  // figure out the top bar text color
   const titleBarTextColor =
-    offWhiteMode || (!darkMode && !yuckMode && !randomMode)
-      ? "#000" // black
-      : colors.lightGray2; // white in dark/yuck/random
+    mode === "yuck" || mode === "dark" || mode === "random"
+      ? "#ffffff"
+      : "#000";
 
-  // watch auth changes, etc. ...
-  useEffect(() => {
-    const unsubscribeAuth = onAuthStateChanged(auth, (currentUser) => {
-      setUser(currentUser);
-      if (currentUser) {
-        setIsSignedIn(true);
-        // etc...
-      } else {
-        setIsSignedIn(false);
-        setUsername("Guest");
-      }
-    });
-    return () => unsubscribeAuth();
-  }, []);
-
-  /* watch auth changes */
   useEffect(() => {
     const unsubscribeAuth = onAuthStateChanged(auth, (currentUser) => {
       setUser(currentUser);
@@ -346,14 +240,12 @@ const Chat = () => {
         setIsSignedIn(true);
         fetchChatUsernameFromDB(currentUser.uid);
 
-        /* read user’s friends list */
         const friendsRef = ref(database, `users/${currentUser.uid}/friends`);
         onValue(friendsRef, (snap) => {
           const data = snap.val() || {};
           setMyFriends(data);
         });
 
-        /* read user’s outgoing friend requests */
         const outRef = ref(database, `outgoingRequests/${currentUser.uid}`);
         onValue(outRef, (snap) => {
           if (!snap.exists()) {
@@ -363,7 +255,6 @@ const Chat = () => {
           }
         });
 
-        /* load the user’s group chats */
         loadUserGroups(currentUser.uid);
       } else {
         setIsSignedIn(false);
@@ -407,7 +298,6 @@ const Chat = () => {
           }
           setGroupChatsMap((prev) => {
             const merged = { ...prev, ...newMap };
-            /* remove old groups if no longer in user’s list */
             for (const k of Object.keys(merged)) {
               if (!groupIds.includes(k)) {
                 delete merged[k];
@@ -427,7 +317,6 @@ const Chat = () => {
     });
   };
 
-  /* watch the messages for the selected chat */
   useEffect(() => {
     if (!isSignedIn) return;
     let unsubscribe: () => void;
@@ -495,7 +384,6 @@ const Chat = () => {
     };
   }, [isSignedIn, selectedChat]);
 
-  /* whenever 'selectedChat' changes, load participant names (for group) */
   useEffect(() => {
     if (selectedChat === "global") {
       setParticipantUsernames([]);
@@ -516,7 +404,6 @@ const Chat = () => {
     });
   }, [selectedChat, groupChatsMap]);
 
-  /* assign colors to unique senders */
   useEffect(() => {
     const uniqueNames = Array.from(new Set(messages.map((m) => m.senderName)));
     const updatedMap = { ...assignedColors };
@@ -537,7 +424,7 @@ const Chat = () => {
   const handleSendMessage = () => {
     if (!isSignedIn) {
       setCooldownMessage("Sign in to send messages.");
-      setTimeout(() => setCooldownMessage(null), 2000); // Clear after 2s
+      setTimeout(() => setCooldownMessage(null), 2000);
       return;
     }
     if (!username || username === "Loading...") {
@@ -550,7 +437,7 @@ const Chat = () => {
     const currentTime = Date.now();
     const isGlobalChat = selectedChat === "global";
     const lastSendTime = isGlobalChat ? lastGlobalSendTime : lastGroupSendTime;
-    const cooldown = isGlobalChat ? 5000 : 1000; // 5s for global, 1s for group
+    const cooldown = isGlobalChat ? 5000 : 1000;
 
     if (currentTime - lastSendTime < cooldown) {
       const remainingTime = Math.ceil(
@@ -617,15 +504,13 @@ const Chat = () => {
     setPopupTargetUid(targetUid);
     setPopupTargetName(targetName);
 
-    // Get screen dimensions
     const screenHeight = Dimensions.get("window").height;
-    const inputAreaHeight = 70; // Approximate height of inputArea based on styles
-    const popupHeight = 150; // Approximate height of popup (adjust based on content)
+    const inputAreaHeight = 70;
+    const popupHeight = 150;
 
-    // Adjust popupY to stay above input area
     const adjustedY = Math.min(
       pageY,
-      screenHeight - inputAreaHeight - popupHeight - 10 // 10 for padding
+      screenHeight - inputAreaHeight - popupHeight - 10
     );
 
     setPopupX(pageX);
@@ -635,7 +520,10 @@ const Chat = () => {
 
   const handleCopyMessage = () => {
     if (!longPressedMessage) return;
-    Clipboard.setString(longPressedMessage.text || "");
+    // Clipboard.setString is deprecated; use setStringAsync if available
+    navigator.clipboard
+      ? navigator.clipboard.writeText(longPressedMessage.text || "")
+      : console.warn("Clipboard API not available");
     setPopupVisible(false);
   };
 
@@ -745,7 +633,7 @@ const Chat = () => {
   };
 
   const handleUploadReceipt = () => {
-    if (!username) return; // prevent navigation if username is not loaded
+    if (!username) return;
     navigation.navigate("UploadReceipt", {
       groupId: selectedChat,
       myUsername: username,
@@ -809,7 +697,7 @@ const Chat = () => {
       <View
         style={[
           styles.signInMessageContainer,
-          { backgroundColor: currentTheme.offWhite2 },
+          { backgroundColor: theme.offWhite2 },
         ]}
       >
         <ChatSkeleton />
@@ -817,7 +705,6 @@ const Chat = () => {
     );
   }
 
-  /* render a single message item */
   const MessageItem = React.memo(({ item }: { item: Message }) => {
     const isCurrentUserMessage = user ? item.senderUid === user.uid : false;
     const isExpanded = expandedMessages[item.key] || false;
@@ -882,7 +769,6 @@ const Chat = () => {
                     const price = rItem.price || 0;
                     const qty = rItem.quantity || 1;
                     const itemTotal = price * qty;
-                    // filter only those buyers who have at least one 'true' in 'selected'
                     const filteredBuyers = (rItem.buyers || []).filter(
                       (b: any) =>
                         Array.isArray(b.selected) &&
@@ -914,7 +800,6 @@ const Chat = () => {
       );
     }
 
-    /* normal text messages */
     const isExpandedText = expandedMessages[item.key] || false;
     return (
       <TouchableOpacity
@@ -973,23 +858,15 @@ const Chat = () => {
   });
 
   return (
-    <View
-      style={[styles.container, { backgroundColor: currentTheme.offWhite2 }]}
-    >
-      {/* <StatusBar barStyle="light-content" backgroundColor={currentTheme.offWhite2} /> */}
-
-      {/* header */}
+    <View style={[styles.container, { backgroundColor: theme.offWhite2 }]}>
       <View
-        style={[
-          styles.headerContainer,
-          { backgroundColor: currentTheme.offWhite2 },
-        ]}
+        style={[styles.headerContainer, { backgroundColor: theme.offWhite2 }]}
       >
         <TouchableOpacity onPress={() => navigation.navigate("Profile")}>
           <FontAwesome
             name="users"
             size={26}
-            color={colors.yellow}
+            color={theme.yellow}
             style={styles.icon}
           />
         </TouchableOpacity>
@@ -1004,7 +881,7 @@ const Chat = () => {
           <FontAwesome
             name="chevron-down"
             size={16}
-            color={currentTheme.yellow}
+            color={theme.yellow}
             style={{ marginLeft: 5 }}
           />
         </TouchableOpacity>
@@ -1021,7 +898,7 @@ const Chat = () => {
             <FontAwesome
               name="plus"
               size={26}
-              color={colors.yellow}
+              color={theme.yellow}
               style={styles.icon}
             />
           )}
@@ -1036,7 +913,6 @@ const Chat = () => {
         </View>
       )}
 
-      {/* chat dropdown */}
       <Modal
         transparent
         visible={dropdownOpen}
@@ -1058,7 +934,7 @@ const Chat = () => {
               <FontAwesome
                 name="globe"
                 size={16}
-                color={colors.yellow}
+                color={theme.yellow}
                 style={styles.dropdownIcon}
               />
               <Text style={[styles.dropdownItemText, styles.globalChatText]}>
@@ -1090,7 +966,6 @@ const Chat = () => {
         </View>
       </Modal>
 
-      {/* message list */}
       <FlatList
         data={messages}
         renderItem={({ item }) => <MessageItem item={item} />}
@@ -1106,14 +981,13 @@ const Chat = () => {
         </View>
       )}
 
-      {/* input row */}
       <View style={styles.inputArea}>
         {selectedChat !== "global" && (
           <TouchableOpacity
             onPress={handleUploadReceipt}
             style={styles.receiptIcon}
           >
-            <FontAwesome name="file-text-o" size={24} color={colors.yellow} />
+            <FontAwesome name="file-text-o" size={24} color={theme.yellow} />
           </TouchableOpacity>
         )}
         <TextInput
@@ -1130,7 +1004,6 @@ const Chat = () => {
         </Pressable>
       </View>
 
-      {/* popup menu */}
       <Modal visible={popupVisible} transparent animationType="fade">
         <TouchableWithoutFeedback onPress={() => setPopupVisible(false)}>
           <View style={styles.modalOverlay} />
@@ -1171,10 +1044,10 @@ const Chat = () => {
                   <Icon
                     name="user-plus"
                     size={18}
-                    color={colors.yellow}
+                    color={theme.yellow}
                     style={styles.popupIcon}
                   />
-                  <Text style={[styles.popupText, { color: colors.yellow }]}>
+                  <Text style={[styles.popupText, { color: theme.yellow }]}>
                     Add Friend
                   </Text>
                 </View>
@@ -1240,18 +1113,15 @@ const Chat = () => {
 
 export default Chat;
 
-/* styles in lowercase */
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    // backgroundColor: colors.yuck,
   },
   headerContainer: {
     flexDirection: "row",
     alignItems: "center",
     paddingHorizontal: 10,
     paddingVertical: 15,
-    // backgroundColor: colors.yuck,
     shadowColor: "#000",
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.3,
@@ -1265,7 +1135,6 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   headerText: {
-    color: "white",
     fontSize: 20,
     fontWeight: "bold",
   },
@@ -1326,10 +1195,10 @@ const styles = StyleSheet.create({
   },
   cooldownPopup: {
     position: "absolute",
-    bottom: 70, // Above inputArea
+    bottom: 70,
     left: 10,
     right: 10,
-    backgroundColor: "rgba(128, 128, 128, 0.9)", // Gray with slight transparency
+    backgroundColor: "rgba(128, 128, 128, 0.9)",
     padding: 10,
     borderRadius: 8,
     alignItems: "center",
@@ -1427,12 +1296,12 @@ const styles = StyleSheet.create({
   },
   modalOverlay: {
     flex: 1,
-    backgroundColor: "rgba(0, 0, 0, 0.6)", // Darker, more modern overlay
+    backgroundColor: "rgba(0, 0, 0, 0.6)",
   },
   popupContainer: {
     position: "absolute",
     width: 180,
-    backgroundColor: "#1E2A38", // Darker, more modern blue
+    backgroundColor: "#1E2A38",
     borderRadius: 12,
     padding: 6,
     zIndex: 999,
