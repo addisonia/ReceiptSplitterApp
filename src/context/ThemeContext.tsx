@@ -1,5 +1,12 @@
 // src/context/ThemeContext.tsx
-import React, { createContext, useState, useContext, ReactNode } from "react";
+import React, {
+  createContext,
+  useState,
+  useContext,
+  ReactNode,
+  useEffect,
+} from "react";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import {
   colors,
   offWhiteTheme,
@@ -19,9 +26,26 @@ interface ThemeContextType {
 
 const ThemeContext = createContext<ThemeContextType | undefined>(undefined);
 
+const THEME_STORAGE_KEY = "@theme_mode"; // Key for storing theme mode in AsyncStorage
+
 export const ThemeProvider = ({ children }: { children: ReactNode }) => {
-  const [mode, setMode] = useState<ThemeMode>("yuck"); // Default to yuck per your app
+  const [mode, setMode] = useState<ThemeMode>("yuck"); // Default to yuck as fallback
   const [randomTheme, setRandomTheme] = useState<Theme>(colors);
+
+  // Load the saved theme mode from AsyncStorage when the app starts
+  useEffect(() => {
+    const loadThemeMode = async () => {
+      try {
+        const savedMode = await AsyncStorage.getItem(THEME_STORAGE_KEY);
+        if (savedMode) {
+          setMode(savedMode as ThemeMode); // Cast to ThemeMode since we know the possible values
+        }
+      } catch (error) {
+        console.error("Failed to load theme mode from storage:", error);
+      }
+    };
+    loadThemeMode();
+  }, []); // Runs once on mount
 
   // Compute the current theme based on mode
   const theme = (() => {
@@ -39,9 +63,16 @@ export const ThemeProvider = ({ children }: { children: ReactNode }) => {
     }
   })();
 
-  // Handle theme mode changes
-  const setThemeMode = (newMode: ThemeMode) => {
+  // Handle theme mode changes and save to AsyncStorage
+  const setThemeMode = async (newMode: ThemeMode) => {
     setMode(newMode);
+    try {
+      await AsyncStorage.setItem(THEME_STORAGE_KEY, newMode);
+      console.log(`Theme mode saved: ${newMode}`);
+    } catch (error) {
+      console.error("Failed to save theme mode to storage:", error);
+    }
+
     if (newMode === "random") {
       // Generate a new random theme immediately
       setRandomTheme({
@@ -65,7 +96,7 @@ export const ThemeProvider = ({ children }: { children: ReactNode }) => {
   };
 
   // Handle random theme updates
-  React.useEffect(() => {
+  useEffect(() => {
     let intervalId: NodeJS.Timeout;
     if (mode === "random") {
       intervalId = setInterval(() => {
