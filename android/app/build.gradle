@@ -102,15 +102,15 @@ android {
             keyPassword 'android'
         }
         release {
-            storeFile file('my-release-key.keystore')
-            storePassword 'FS_PRODUCE'
-            keyAlias 'my-key-alias'
-            keyPassword 'FS_PRODUCE'
+            storeFile file(findProperty('MYAPP_RELEASE_STORE_FILE') ?: 'my-release-key.keystore')
+            storePassword findProperty('MYAPP_RELEASE_STORE_PASSWORD') ?: ''
+            keyAlias findProperty('MYAPP_RELEASE_KEY_ALIAS') ?: ''
+            keyPassword findProperty('MYAPP_RELEASE_KEY_PASSWORD') ?: ''
         }
     }
     buildTypes {
         debug {
-            signingConfig signingConfigs.release
+            signingConfig signingConfigs.debug
         }
         release {
             // Caution! In production, you need to generate your own keystore file.
