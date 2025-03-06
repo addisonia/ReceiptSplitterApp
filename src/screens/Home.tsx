@@ -19,6 +19,7 @@ import { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { RootStackParamList } from "../types/RootStackParams";
 // import colors from "../../constants/colors";
 import GoogleSignInButton from "../components/GoogleSignInButton";
+import { GoogleSignin } from "@react-native-google-signin/google-signin";
 import { auth, database } from "../firebase";
 import { User, signOut } from "firebase/auth";
 import PrivacyPolicy from "../components/PrivacyPolicy";
@@ -168,7 +169,14 @@ const Home = () => {
 
   const handleSignOut = async () => {
     try {
+      // Clear Google Sign-In cache
+      await GoogleSignin.signOut();
+      console.log("Google Sign-In cache cleared");
+
+      // Sign out from Firebase
       await signOut(auth);
+      console.log("Firebase sign-out successful");
+
       setSignInModalVisible(false);
     } catch (error) {
       console.error("Sign out error:", error);

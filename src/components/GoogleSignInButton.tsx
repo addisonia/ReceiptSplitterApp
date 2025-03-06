@@ -145,9 +145,9 @@ const GoogleSignInButton: React.FC<GoogleSignInButtonProps> = ({
       await GoogleSignin.hasPlayServices();
       console.log("Play services available");
 
-      // Sign out from Google to force account picker (doesn’t affect Firebase)
-      await GoogleSignin.signOut();
-      console.log("Signed out from Google successfully");
+      // // Sign out from Google to force account picker (doesn’t affect Firebase)
+      // await GoogleSignin.signOut();
+      // console.log("Signed out from Google successfully");
 
       // Sign in with Google (this will show the account picker)
       console.log("Attempting to sign in with Google...");

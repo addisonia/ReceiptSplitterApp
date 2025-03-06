@@ -18,6 +18,7 @@ import { useNavigation } from "@react-navigation/native";
 import { StackNavigationProp } from "@react-navigation/stack";
 import { RootStackParamList } from "../types/RootStackParams";
 import { useTheme } from "../context/ThemeContext";
+import colors from "@/constants/colors";
 
 type ReceiptsScreenProp = StackNavigationProp<RootStackParamList, "Receipts">;
 
@@ -252,7 +253,7 @@ const Receipts = () => {
         <Text
           style={[
             styles.screenTitle,
-            { color: mode === "yuck" ? "white" : "#333" },
+            { color: mode === "dark" ? colors.offWhite : mode === "yuck" ? "white" : "#333" },
           ]}
         >
           Receipts
