@@ -1,21 +1,19 @@
-// screens/UploadReceipt.tsx
+// src/screens/UploadReceipts.tsx
 import React, { useEffect, useState } from "react";
 import {
-  View,
+  ScrollView,
   Text,
   StyleSheet,
   StatusBar,
   Pressable,
-  ScrollView,
-  Alert,
+  View,
 } from "react-native";
-import { useNavigation, useRoute } from "@react-navigation/native";
-import Icon from "react-native-vector-icons/FontAwesome";
-import colors from "../../constants/colors";
+import { useNavigation } from "@react-navigation/native";
 import { auth, database } from "../firebase";
-import { ref, onValue, push, set } from "firebase/database";
+import { ref, onValue } from "firebase/database";
+import Icon from "react-native-vector-icons/FontAwesome";
+import { useTheme } from "../context/ThemeContext";
 
-/* define buyer, item, and receipt types */
 export type BuyerType = {
   name: string;
   selected: boolean[];
@@ -36,17 +34,90 @@ export type ReceiptData = {
   time_and_date: string;
 };
 
-export default function UploadReceipt() {
+function normalizeBuyer(rawBuyer: any): BuyerType {
+  if (typeof rawBuyer === "string") {
+    return { name: rawBuyer, selected: [] };
+  }
+  if (rawBuyer && typeof rawBuyer === "object") {
+    let realName = "";
+    if (typeof rawBuyer.name === "string") {
+      realName = rawBuyer.name;
+    } else {
+      realName = JSON.stringify(rawBuyer.name ?? "???");
+    }
+    const sel = Array.isArray(rawBuyer.selected)
+      ? rawBuyer.selected.filter((val: any) => typeof val === "boolean")
+      : [];
+    return { name: realName, selected: sel };
+  }
+  return { name: "UnknownBuyer", selected: [] };
+}
+
+function normalizeItem(rawItem: any): ItemType {
+  let iName = "";
+  if (typeof rawItem.item === "string") {
+    iName = rawItem.item;
+  } else if (rawItem.item && typeof rawItem.item === "object") {
+    iName = JSON.stringify(rawItem.item);
+  } else {
+    iName = "Unnamed";
+  }
+  const priceNum =
+    typeof rawItem.price === "number" && !isNaN(rawItem.price)
+      ? rawItem.price
+      : 0;
+  const qty =
+    typeof rawItem.quantity === "number" && rawItem.quantity > 0
+      ? rawItem.quantity
+      : 1;
+  let itemBuyers: BuyerType[] = [];
+  if (Array.isArray(rawItem.buyers)) {
+    itemBuyers = rawItem.buyers.map(normalizeBuyer);
+  } else if (Array.isArray(rawItem.selectedBy)) {
+    itemBuyers = rawItem.selectedBy.map((nameStr: string) => ({
+      name: nameStr,
+      selected: Array(qty).fill(true),
+    }));
+  } else {
+    itemBuyers = [];
+  }
+  return {
+    item: iName,
+    price: priceNum,
+    quantity: qty,
+    buyers: itemBuyers,
+  };
+}
+
+function normalizeReceiptData(receiptKey: string, rawData: any): ReceiptData {
+  const t =
+    typeof rawData.time_and_date === "string" ? rawData.time_and_date : "";
+  let topBuyers: BuyerType[] = [];
+  if (Array.isArray(rawData.buyers)) {
+    topBuyers = rawData.buyers.map(normalizeBuyer);
+  } else {
+    topBuyers = [];
+  }
+  const rawItems = Array.isArray(rawData.items) ? rawData.items : [];
+  const items: ItemType[] = rawItems.map(normalizeItem);
+  let theTax = 0;
+  if (typeof rawData.tax === "number" && !isNaN(rawData.tax)) {
+    theTax = rawData.tax;
+  }
+  return {
+    name: receiptKey,
+    items,
+    buyers: topBuyers,
+    tax: theTax,
+    time_and_date: t,
+  };
+}
+
+export default function UploadReceipts() {
+  const { theme, mode } = useTheme();
   const navigation = useNavigation<any>();
-  const route = useRoute<any>();
-
-  // the group id passed from Chat
-  const groupId = route.params?.groupId;
-  // the username from Chat
-  const chatUsername = route.params?.myUsername || "Unknown User";
-
   const [receipts, setReceipts] = useState<ReceiptData[]>([]);
-  const [backIconColor, setBackIconColor] = useState(colors.yellow);
+  const [backIconColor, setBackIconColor] = useState(theme.yellow);
 
   useEffect(() => {
     if (!auth.currentUser) return;
@@ -62,7 +133,6 @@ export default function UploadReceipt() {
       const loaded = Object.keys(data).map((key) =>
         normalizeReceiptData(key, data[key])
       );
-      // sort by most recent date
       loaded.sort(
         (a, b) =>
           new Date(b.time_and_date).getTime() -
@@ -74,40 +144,11 @@ export default function UploadReceipt() {
     return () => unsubscribe();
   }, []);
 
-  async function handleSelectReceipt(receipt: ReceiptData) {
-    try {
-      if (!auth.currentUser) return;
-      if (!groupId) {
-        Alert.alert("No group found.");
-        return;
-      }
-      const groupMessagesRef = ref(database, `groupChats/${groupId}/messages`);
-      const newGroupMsgRef = push(groupMessagesRef);
-
-      const userUid = auth.currentUser.uid;
-      const senderName = chatUsername; // use the username from chat
-
-      // build a full payload with receipt data
-      const messagePayload = {
-        type: "receipt",
-        timestamp: Date.now(),
-        senderUid: userUid,
-        senderName: senderName,
-        receiptData: {
-          name: receipt.name,
-          date: receipt.time_and_date,
-          tax: receipt.tax,
-          items: receipt.items,
-          buyers: receipt.buyers,
-        },
-      };
-
-      await set(newGroupMsgRef, messagePayload);
-      navigation.goBack();
-    } catch (error) {
-      Alert.alert("Error", "Unable to upload the receipt.");
-      console.error("error uploading receipt:", error);
-    }
+  function handleSelectReceipt(receipt: ReceiptData) {
+    navigation.navigate("MainTabs", {
+      screen: "Split",
+      params: { importedReceipt: receipt },
+    });
   }
 
   function handleBack() {
@@ -122,22 +163,39 @@ export default function UploadReceipt() {
   }
 
   return (
-    <View style={styles.mainContainer}>
-      <StatusBar barStyle="light-content" backgroundColor={colors.yuck} />
+    <View style={[styles.mainContainer, { backgroundColor: theme.offWhite2 }]}>
+      <StatusBar
+        barStyle={
+          mode === "offWhite" || mode === "default"
+            ? "dark-content"
+            : "light-content"
+        }
+        backgroundColor={theme.offWhite2}
+      />
 
-      <View style={styles.topBar}>
+      <View style={[styles.topBar, { backgroundColor: theme.offWhite2 }]}>
         <Pressable
           onPress={handleBack}
           style={styles.backButton}
-          onPressIn={() => setBackIconColor(colors.green)}
-          onPressOut={() => setBackIconColor(colors.yellow)}
+          onPressIn={() => setBackIconColor(theme.green)}
+          onPressOut={() => setBackIconColor(theme.yellow)}
         >
           <Icon name="arrow-left" size={24} color={backIconColor} />
         </Pressable>
-        <Text style={styles.header}>Upload A Receipt</Text>
+        {/* text color changes based on mode to make it darker in offWhite/default */}
+        <Text
+          style={[
+            styles.header,
+            {
+              color:
+                mode === "offWhite" || mode === "default" ? "#222" : "#fff",
+            },
+          ]}
+        >
+          Import Receipts
+        </Text>
         <View style={styles.headerSpacer} />
       </View>
-
       <ScrollView contentContainerStyle={styles.contentContainer}>
         {receipts.map((receipt) => {
           const totalCost = calculateTotal(receipt);
@@ -147,66 +205,73 @@ export default function UploadReceipt() {
               onPress={() => handleSelectReceipt(receipt)}
               style={({ pressed }) => [
                 styles.card,
-                { backgroundColor: pressed ? colors.graygreen : "#333" },
+                {
+                  backgroundColor:
+                    mode === "dark"
+                      ? pressed
+                        ? theme.offWhite
+                        : theme.lightGray2
+                      : mode === "yuck"
+                      ? pressed
+                        ? theme.green
+                        : theme.yellow
+                      : mode === "default"
+                      ? pressed
+                        ? theme.offWhite2
+                        : theme.lightGray2
+                      : pressed
+                      ? theme.lightGray
+                      : "#b3ad9d",
+                },
               ]}
             >
-              <Text style={styles.cardText}>{receipt.name}</Text>
-              <Text style={styles.cardSubText}>
+              <Text
+                style={[
+                  styles.cardText,
+                  { color: mode === "dark" ? "#fff" : "#222" },
+                ]}
+              >
+                {receipt.name}
+              </Text>
+              <Text
+                style={[
+                  styles.cardSubText,
+                  { color: mode === "dark" ? "#ccc" : "#555" },
+                ]}
+              >
                 {receipt.time_and_date
                   ? new Date(receipt.time_and_date).toLocaleString()
                   : ""}
               </Text>
-              <Text style={styles.cardTotal}>
+              <Text
+                style={[
+                  styles.cardTotal,
+                  { color: mode === "dark" ? "#fff" : "#222" },
+                ]}
+              >
                 Total: ${totalCost.toFixed(2)}
               </Text>
             </Pressable>
           );
         })}
         {receipts.length === 0 && (
-          <Text style={styles.emptyText}>No receipts found.</Text>
+          <Text
+            style={[
+              styles.emptyText,
+              { color: mode === "dark" ? "#fff" : "#222" },
+            ]}
+          >
+            No receipts found.
+          </Text>
         )}
       </ScrollView>
     </View>
   );
 }
 
-// helper functions for normalizing
-function normalizeReceiptData(receiptKey: string, rawData: any): ReceiptData {
-  return {
-    name: receiptKey,
-    items: Array.isArray(rawData.items) ? rawData.items.map(normalizeItem) : [],
-    buyers: Array.isArray(rawData.buyers)
-      ? rawData.buyers.map(normalizeBuyer)
-      : [],
-    tax: typeof rawData.tax === "number" ? rawData.tax : 0,
-    time_and_date:
-      typeof rawData.time_and_date === "string" ? rawData.time_and_date : "",
-  };
-}
-
-function normalizeBuyer(rawBuyer: any): BuyerType {
-  return {
-    name: typeof rawBuyer.name === "string" ? rawBuyer.name : "UnknownBuyer",
-    selected: Array.isArray(rawBuyer.selected) ? rawBuyer.selected : [],
-  };
-}
-
-function normalizeItem(rawItem: any): ItemType {
-  return {
-    item: typeof rawItem.item === "string" ? rawItem.item : "Unnamed",
-    price: typeof rawItem.price === "number" ? rawItem.price : 0,
-    quantity: typeof rawItem.quantity === "number" ? rawItem.quantity : 1,
-    buyers: Array.isArray(rawItem.buyers)
-      ? rawItem.buyers.map(normalizeBuyer)
-      : [],
-  };
-}
-
-/* styles in lowercase */
 const styles = StyleSheet.create({
   mainContainer: {
     flex: 1,
-    backgroundColor: colors.yuck,
   },
   topBar: {
     flexDirection: "row",
@@ -214,7 +279,6 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
     paddingHorizontal: 15,
     paddingVertical: 10,
-    backgroundColor: colors.yuck,
   },
   backButton: {
     padding: 10,
@@ -223,7 +287,6 @@ const styles = StyleSheet.create({
     flex: 1,
     fontSize: 20,
     fontWeight: "bold",
-    color: "#fff",
     textAlign: "center",
   },
   headerSpacer: {
@@ -238,29 +301,24 @@ const styles = StyleSheet.create({
   card: {
     padding: 12,
     marginBottom: 15,
-    backgroundColor: "#333",
     borderRadius: 6,
     width: "90%",
   },
   cardText: {
     fontSize: 18,
     fontWeight: "600",
-    color: "#fff",
     marginBottom: 5,
   },
   cardSubText: {
     fontSize: 12,
-    color: "#ccc",
     marginBottom: 5,
   },
   cardTotal: {
     fontSize: 16,
-    color: "#fff",
     marginBottom: 10,
   },
   emptyText: {
     marginTop: 20,
     fontSize: 14,
-    color: "#fff",
   },
 });
