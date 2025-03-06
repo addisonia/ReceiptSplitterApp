@@ -55,7 +55,13 @@ const Home = () => {
   const { theme, mode } = useTheme();
 
   const titleTextColor =
-    mode === "yuck" ? "#ffffff" : mode === "dark" ? "#ede7d8" : mode === "offWhite" || mode === "default" ? "#000" : theme.lightGray2;
+    mode === "yuck"
+      ? "#ffffff"
+      : mode === "dark"
+      ? "#ede7d8"
+      : mode === "offWhite" || mode === "default"
+      ? "#000"
+      : theme.lightGray2;
 
   const [user, setUser] = useState<User | null>(null);
   const [isSignInModalVisible, setSignInModalVisible] = useState(false);
@@ -272,7 +278,14 @@ const Home = () => {
             />
           ) : (
             <Pressable onPress={() => setIsEditingUsername(true)}>
-              <AppText style={styles.modalTitle}>Hello: {username}</AppText>
+              <AppText style={[
+                styles.modalTitle,
+                {
+                  color: mode === "default" || mode === "offWhite" ? "black" : "#ffffff",
+                },
+              ]}>
+                Hello: {username}
+                </AppText>
             </Pressable>
           )}
 
@@ -282,7 +295,12 @@ const Home = () => {
               style={styles.profileImage}
             />
           )}
-          <AppText style={styles.userEmail}>{user.email}</AppText>
+          <AppText style={[
+            styles.userEmail,
+            {
+              color: mode === "default" || mode === "offWhite" ? "black" : "#ffffff",
+            }
+            ]}>{user.email}</AppText>
           <Pressable
             onPress={handleSignOut}
             style={({ pressed }) => [
@@ -298,7 +316,17 @@ const Home = () => {
     // user not signed in yet
     return (
       <View style={styles.authContainer}>
-        <AppText style={styles.modalTitle}>Sign In To Receipt Splitter</AppText>
+        <AppText
+          style={[
+            styles.modalTitle,
+            {
+              color:
+                mode === "default" || mode === "offWhite" ? "#333" : "#ffffff",
+            },
+          ]}
+        >
+          Sign In To Receipt Splitter
+        </AppText>
         <GoogleSignInButton
           onSuccess={() => setSignInModalVisible(false)}
           style={({ pressed }) =>
@@ -416,7 +444,22 @@ const Home = () => {
         <TouchableWithoutFeedback onPress={() => setSignInModalVisible(false)}>
           <View style={styles.modalOverlay}>
             <TouchableWithoutFeedback onPress={() => {}}>
-              <View style={[styles.modalContainer, styles.theming]}>
+              <View
+                style={[
+                  styles.modalContainer,
+                  styles.theming,
+                  {
+                    backgroundColor:
+                      mode === "default"
+                        ? "#ffffff"
+                        : mode === "offWhite"
+                        ? colors.offWhite
+                        : mode === "dark"
+                        ? "#333"
+                        : colors.yuck,
+                  },
+                ]}
+              >
                 {renderAuthContent()}
               </View>
             </TouchableWithoutFeedback>
