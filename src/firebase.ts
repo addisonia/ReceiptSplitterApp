@@ -1,8 +1,9 @@
 // src/firebase.ts
 import { initializeApp } from 'firebase/app';
-import { getAuth, GoogleAuthProvider } from 'firebase/auth';
+import { initializeAuth, GoogleAuthProvider, getReactNativePersistence } from 'firebase/auth';
 import { getDatabase } from 'firebase/database';
 import { API_KEY, AUTH_DOMAIN, PROJECT_ID, STORAGE_BUCKET, MESSAGING_SENDER_ID, APP_ID, GOOGLE_CLIENT_ID, WEB_CLIENT_ID } from '@env';
+import ReactNativeAsyncStorage from '@react-native-async-storage/async-storage';
 
 const firebaseConfig = {
   apiKey: API_KEY,
@@ -14,7 +15,12 @@ const firebaseConfig = {
 };
 
 const app = initializeApp(firebaseConfig);
-export const auth = getAuth(app);
+
+// Initialize Firebase Auth with persistence only once
+export const auth = initializeAuth(app, {
+  persistence: getReactNativePersistence(ReactNativeAsyncStorage),
+});
+
 export const database = getDatabase(app);
 export const googleProvider = new GoogleAuthProvider();
 // googleProvider.setCustomParameters({

@@ -27,6 +27,7 @@ import { useTheme } from "../context/ThemeContext";
 // removed: no longer importing `child` or `onValue`; we only use get() and update().
 import { ref, get, update } from "firebase/database";
 import Receipts from "./Receipts";
+import { WEB_CLIENT_ID } from "@env";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import {
   colors,
@@ -167,21 +168,30 @@ const Home = () => {
     return result;
   };
 
-  const handleSignOut = async () => {
-    try {
-      // Clear Google Sign-In cache
-      await GoogleSignin.signOut();
-      console.log("Google Sign-In cache cleared");
+// home.tsx
+const handleSignOut = async () => {
+  try {
+    // Configure Google Sign-In before signing out
+    GoogleSignin.configure({
+      webClientId: WEB_CLIENT_ID, // From your .env file
+      offlineAccess: true,
+      scopes: ["profile", "email"],
+    });
+    console.log("Google Sign-In configured");
 
-      // Sign out from Firebase
-      await signOut(auth);
-      console.log("Firebase sign-out successful");
+    // Clear Google Sign-In cache
+    await GoogleSignin.signOut();
+    console.log("Google Sign-In cache cleared");
 
-      setSignInModalVisible(false);
-    } catch (error) {
-      console.error("Sign out error:", error);
-    }
-  };
+    // Sign out from Firebase
+    await signOut(auth);
+    console.log("Firebase sign-out successful");
+
+    setSignInModalVisible(false);
+  } catch (error) {
+    console.error("Sign out error:", error);
+  }
+};
 
   // changed: removed the code that checks if “usernames/<newUsername>” already exists and the updates to that node.
   const handleUsernameSubmit = async () => {
