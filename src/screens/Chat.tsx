@@ -165,6 +165,10 @@ const Chat = () => {
   const [username, setUsername] = useState<string | null>(null);
   const [isSignedIn, setIsSignedIn] = useState(false);
 
+  const [initialLoad, setInitialLoad] = useState(true);
+  const [showScrollDown, setShowScrollDown] = useState(false);
+  const flatListRef = useRef<FlatList<Message>>(null);
+
   const [messages, setMessages] = useState<Message[]>([]);
   const [selectedChat, setSelectedChat] = useState("global");
   const [groupChatsMap, setGroupChatsMap] = useState<
@@ -232,8 +236,6 @@ const Chat = () => {
     mode === "yuck" || mode === "dark" || mode === "random"
       ? "#ffffff"
       : "#000";
-
-  const flatListRef = useRef<FlatList<Message>>(null);
 
   useEffect(() => {
     const unsubscribeAuth = onAuthStateChanged(auth, (currentUser) => {
@@ -862,7 +864,9 @@ const Chat = () => {
   return (
     <View style={[styles.container, { backgroundColor: theme.offWhite2 }]}>
       {/* Header */}
-      <View style={[styles.headerContainer, { backgroundColor: theme.offWhite2 }]}>
+      <View
+        style={[styles.headerContainer, { backgroundColor: theme.offWhite2 }]}
+      >
         <TouchableOpacity onPress={() => navigation.navigate("Profile")}>
           <FontAwesome
             name="users"
@@ -871,7 +875,7 @@ const Chat = () => {
             style={styles.icon}
           />
         </TouchableOpacity>
-  
+
         <TouchableOpacity
           style={styles.headerTitleWrapper}
           onPress={() => setDropdownOpen(true)}
@@ -886,7 +890,7 @@ const Chat = () => {
             style={{ marginLeft: 5 }}
           />
         </TouchableOpacity>
-  
+
         <TouchableOpacity onPress={handleTopRightIconPress}>
           {selectedChat !== "global" ? (
             <FontAwesome
@@ -905,7 +909,7 @@ const Chat = () => {
           )}
         </TouchableOpacity>
       </View>
-  
+
       {/* Participant list (only when in a group) */}
       {selectedChat !== "global" && participantUsernames.length > 0 && (
         <View style={styles.participantList}>
@@ -914,7 +918,7 @@ const Chat = () => {
           </Text>
         </View>
       )}
-  
+
       {/* One FlatList with scroll-to-end */}
       <FlatList
         ref={flatListRef}
@@ -922,20 +926,44 @@ const Chat = () => {
         renderItem={({ item }) => <MessageItem item={item} />}
         keyExtractor={(item) => item.key}
         contentContainerStyle={styles.messagesContainer}
-        removeClippedSubviews
-        windowSize={5}
+        onScroll={(e) => {
+          const { contentOffset, layoutMeasurement, contentSize } =
+            e.nativeEvent;
+          // figure out if the user is near the bottom
+          const closeToBottom =
+            contentOffset.y + layoutMeasurement.height >=
+            contentSize.height - 50;
+          setShowScrollDown(!closeToBottom);
+        }}
+        scrollEventThrottle={200}
         onContentSizeChange={() => {
-          flatListRef.current?.scrollToEnd({ animated: false });
+          // only auto-scroll if:
+          //   1) NOT the first time the chat has loaded
+          //   2) we are not showing the scrollDown button (so user is near bottom)
+          if (!initialLoad && !showScrollDown) {
+            flatListRef.current?.scrollToEnd({ animated: true });
+          }
+          // after the first time content shows up, set initialLoad to false
+          setInitialLoad(false);
         }}
       />
-  
+
+      {showScrollDown && (
+        <TouchableOpacity
+          style={styles.scrollToBottomButton}
+          onPress={() => flatListRef.current?.scrollToEnd({ animated: true })}
+        >
+          <FontAwesome name="chevron-down" size={22} color="#FFF" />
+        </TouchableOpacity>
+      )}
+
       {/* Cooldown popup */}
       {cooldownMessage && (
         <View style={styles.cooldownPopup}>
           <Text style={styles.cooldownText}>{cooldownMessage}</Text>
         </View>
       )}
-  
+
       {/* Input area */}
       <View style={styles.inputArea}>
         {selectedChat !== "global" && (
@@ -959,7 +987,7 @@ const Chat = () => {
           <Text style={styles.sendButtonText}>Send</Text>
         </Pressable>
       </View>
-  
+
       {/* Popup modal */}
       <Modal visible={popupVisible} transparent animationType="fade">
         <TouchableWithoutFeedback onPress={() => setPopupVisible(false)}>
@@ -979,7 +1007,7 @@ const Chat = () => {
           </Animated.View>
         )}
       </Modal>
-  
+
       {/* Dropdown for switching chats */}
       <Modal
         transparent
@@ -1009,9 +1037,9 @@ const Chat = () => {
                 Global Chat
               </Text>
             </TouchableOpacity>
-  
+
             {groupChatArray.length > 0 && <View style={styles.divider} />}
-  
+
             {groupChatArray.map((g) => (
               <TouchableOpacity
                 key={g.id}
@@ -1035,7 +1063,6 @@ const Chat = () => {
       </Modal>
     </View>
   );
-  
 };
 
 export default Chat;
@@ -1093,6 +1120,15 @@ const styles = StyleSheet.create({
   otherUserMessage: {
     backgroundColor: "#0C3A50",
     alignSelf: "flex-start",
+  },
+  scrollToBottomButton: {
+    position: "absolute",
+    right: 16,
+    bottom: 100, // just above your input area
+    backgroundColor: "rgba(0, 0, 0, 0.5)",
+    padding: 10,
+    borderRadius: 20,
+    zIndex: 999,
   },
   senderName: {
     fontWeight: "bold",
