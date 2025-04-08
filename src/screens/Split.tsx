@@ -345,7 +345,7 @@ const Split: React.FC = () => {
     } catch (error) {
       console.log("save error:", error);
       setSaveButtonColor(theme.yellow);
-      Alert.alert("Error", "failed to save receipt.");
+      Alert.alert("Error", "failed to save receipt. Try re-opening the app.");
     }
   };
 

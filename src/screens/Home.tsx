@@ -168,30 +168,30 @@ const Home = () => {
     return result;
   };
 
-// home.tsx
-const handleSignOut = async () => {
-  try {
-    // Configure Google Sign-In before signing out
-    GoogleSignin.configure({
-      webClientId: WEB_CLIENT_ID, // From your .env file
-      offlineAccess: true,
-      scopes: ["profile", "email"],
-    });
-    console.log("Google Sign-In configured");
+  // home.tsx
+  const handleSignOut = async () => {
+    try {
+      // Configure Google Sign-In before signing out
+      GoogleSignin.configure({
+        webClientId: WEB_CLIENT_ID, // From your .env file
+        offlineAccess: true,
+        scopes: ["profile", "email"],
+      });
+      console.log("Google Sign-In configured");
 
-    // Clear Google Sign-In cache
-    await GoogleSignin.signOut();
-    console.log("Google Sign-In cache cleared");
+      // Clear Google Sign-In cache
+      await GoogleSignin.signOut();
+      console.log("Google Sign-In cache cleared");
 
-    // Sign out from Firebase
-    await signOut(auth);
-    console.log("Firebase sign-out successful");
+      // Sign out from Firebase
+      await signOut(auth);
+      console.log("Firebase sign-out successful");
 
-    setSignInModalVisible(false);
-  } catch (error) {
-    console.error("Sign out error:", error);
-  }
-};
+      setSignInModalVisible(false);
+    } catch (error) {
+      console.error("Sign out error:", error);
+    }
+  };
 
   // changed: removed the code that checks if “usernames/<newUsername>” already exists and the updates to that node.
   const handleUsernameSubmit = async () => {
@@ -296,14 +296,19 @@ const handleSignOut = async () => {
             />
           ) : (
             <Pressable onPress={() => setIsEditingUsername(true)}>
-              <AppText style={[
-                styles.modalTitle,
-                {
-                  color: mode === "default" || mode === "offWhite" ? "black" : "#ffffff",
-                },
-              ]}>
+              <AppText
+                style={[
+                  styles.modalTitle,
+                  {
+                    color:
+                      mode === "default" || mode === "offWhite"
+                        ? "black"
+                        : "#ffffff",
+                  },
+                ]}
+              >
                 Hello: {username}
-                </AppText>
+              </AppText>
             </Pressable>
           )}
 
@@ -313,12 +318,19 @@ const handleSignOut = async () => {
               style={styles.profileImage}
             />
           )}
-          <AppText style={[
-            styles.userEmail,
-            {
-              color: mode === "default" || mode === "offWhite" ? "black" : "#ffffff",
-            }
-            ]}>{user.email}</AppText>
+          <AppText
+            style={[
+              styles.userEmail,
+              {
+                color:
+                  mode === "default" || mode === "offWhite"
+                    ? "black"
+                    : "#ffffff",
+              },
+            ]}
+          >
+            {user.email}
+          </AppText>
           <Pressable
             onPress={handleSignOut}
             style={({ pressed }) => [
@@ -365,7 +377,11 @@ const handleSignOut = async () => {
           onPress={handleStartSnake}
           style={styles.iconButton}
         >
-          <FontAwesome5 name="gamepad" size={24} color={gameIconColor} />
+          <FontAwesome5
+            name="gamepad"
+            size={24}
+            color={mode === "offWhite" ? "#7d001d" : gameIconColor}
+          />
         </Pressable>
 
         <Pressable
@@ -374,7 +390,11 @@ const handleSignOut = async () => {
           onPress={() => setSignInModalVisible(true)}
           style={styles.iconButton}
         >
-          <FontAwesome5 name="user" size={24} color={userIconColor} />
+          <FontAwesome5
+            name="user"
+            size={24}
+            color={mode === "offWhite" ? "#7d001d" : userIconColor}
+          />
           {user && <View style={styles.authBadge} />}
         </Pressable>
 
@@ -390,7 +410,11 @@ const handleSignOut = async () => {
           onPress={handleReceiptsPress}
           style={styles.iconButton}
         >
-          <FontAwesome5 name="receipt" size={24} color={receiptIconColor} />
+          <FontAwesome5
+            name="receipt"
+            size={24}
+            color={mode === "offWhite" ? "#7d001d" : receiptIconColor}
+          />
         </Pressable>
 
         <Pressable
@@ -399,7 +423,11 @@ const handleSignOut = async () => {
           onPress={() => setPrivacyModalVisible(true)}
           style={styles.iconButton}
         >
-          <FontAwesome5 name="shield-alt" size={24} color={privacyIconColor} />
+          <FontAwesome5
+            name="shield-alt"
+            size={24}
+            color={mode === "offWhite" ? "#7d001d" : privacyIconColor}
+          />
         </Pressable>
       </View>
 
@@ -419,7 +447,13 @@ const handleSignOut = async () => {
 
       <View style={styles.titleContainer}>
         <AppText
-          style={[styles.title, styles.boldText, { color: titleTextColor }]}
+          style={[
+            styles.title,
+            styles.boldText,
+            {
+              color: mode === "offWhite" ? "#7d001d" : titleTextColor,
+            },
+          ]}
         >
           Receipt
         </AppText>
@@ -428,7 +462,9 @@ const handleSignOut = async () => {
             styles.title,
             styles.titleSpacing,
             styles.boldText,
-            { color: titleTextColor },
+            {
+              color: mode === "offWhite" ? "#7d001d" : titleTextColor,
+            },
           ]}
         >
           Splitter
@@ -437,12 +473,19 @@ const handleSignOut = async () => {
 
       <View style={styles.bottom}>
         <Pressable
-          style={[styles.startButton, { backgroundColor: buttonBgColor }]}
+          style={[styles.startButton,
+            {
+              backgroundColor: mode === "offWhite" ? "#7d001d" : buttonBgColor
+            }]}
           onPress={handleStartSplitting}
           onPressIn={() => setButtonBgColor(colors.green)}
           onPressOut={() => setButtonBgColor(colors.yellow)}
         >
-          <AppText style={[styles.buttonText, styles.boldText]}>
+          <AppText style={[
+            styles.buttonText, styles.boldText,
+            {
+              color: mode === "offWhite" ? "#ffffff" : colors.black
+            }]}>
             Start Splitting
           </AppText>
         </Pressable>
