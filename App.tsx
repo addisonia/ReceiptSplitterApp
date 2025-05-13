@@ -25,6 +25,8 @@ import GroupChat from "./src/screens/GroupChat";
 import DM from "./src/screens/DM";
 import UploadReceipt from "./src/screens/UploadReceipt";
 import { ThemeProvider } from "./src/context/ThemeContext";
+import { registerForPushNotificationsAsync } from "./src/utils/pushNotifications";
+
 
 const Tab = createMaterialTopTabNavigator();
 const Stack = createNativeStackNavigator();
@@ -65,9 +67,15 @@ function App() {
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
       setUser(currentUser);
+      if (currentUser) {
+        (async () => {
+          await registerForPushNotificationsAsync(currentUser.uid);
+        })();
+      }
     });
     return unsubscribe;
   }, []);
+  
 
   useEffect(() => {
     async function loadFonts() {

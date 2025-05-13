@@ -30,3 +30,4 @@ required installations to run code:
 - npm i @react-native-google-signin/google-signin@latest
 - npx expo install expo-auth-session expo-web-browser expo-random
 - npm install --save-dev babel-plugin-dotenv
+- npx expo install expo-notifications

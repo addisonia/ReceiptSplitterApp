@@ -1,5 +1,5 @@
-// src/screens/DM.tsx
-import React, { useState, useEffect, useCallback } from "react";
+// src/screens/DM.tsx   ← replaces the previous file
+import React, { useState, useEffect, useRef } from "react";
 import {
   View,
   Text,
@@ -8,272 +8,305 @@ import {
   TextInput,
   Pressable,
   TouchableOpacity,
+  TouchableWithoutFeedback,
   Modal,
   Animated,
   Dimensions,
-  TouchableWithoutFeedback,
   Clipboard,
+  Alert,
 } from "react-native";
 import { auth, database } from "../firebase";
-import { ref, onValue, push, set } from "firebase/database";
+import { ref, onValue, push, set, get } from "firebase/database";
 import { RouteProp, useNavigation, useRoute } from "@react-navigation/native";
 import { onAuthStateChanged, User } from "firebase/auth";
-import { FontAwesome5 } from "@expo/vector-icons";
+import { FontAwesome5, FontAwesome } from "@expo/vector-icons";
 import Icon from "react-native-vector-icons/Feather";
 import { useTheme } from "../context/ThemeContext";
 import { colors } from "../components/ColorThemes";
+import * as Notifications from "expo-notifications";
+import Constants from "expo-constants";
 
+/* ---------- types ----------- */
 type DMRouteProp = RouteProp<
   { DM: { friendUid: string; friendUsername: string } },
   "DM"
 >;
 
+export type BuyerType = { name: string; selected: boolean[] };
+export type ItemType = {
+  item: string;
+  price: number;
+  quantity: number;
+  buyers: BuyerType[];
+};
+export type ReceiptData = {
+  name: string;
+  items: ItemType[];
+  buyers: BuyerType[];
+  tax: number;
+  date?: string;
+};
+
 interface DMMessage {
   key: string;
   senderUid: string;
   senderName: string;
-  text: string;
+  text?: string;
   timestamp: number;
+  type?: string;
+  receiptData?: ReceiptData;
 }
 
+/* ---------- component ----------- */
 const DM = () => {
   const { theme, mode } = useTheme();
-  const navigation = useNavigation();
+  const navigation = useNavigation<any>();
   const route = useRoute<DMRouteProp>();
   const { friendUid, friendUsername } = route.params;
 
   const topTextColor =
-    mode === "yuck" || mode === "dark" || mode === "random"
-      ? "#ffffff"
-      : "#000";
+    mode === "yuck" || mode === "dark" || mode === "random" ? "#fff" : "#000";
 
   const [currentUser, setCurrentUser] = useState<User | null>(auth.currentUser);
-  const [myUsername, setMyUsername] = useState<string>("");
+  const [myUsername, setMyUsername] = useState("");
   const [messages, setMessages] = useState<DMMessage[]>([]);
   const [newMessageText, setNewMessageText] = useState("");
-  const [expandedMessages, setExpandedMessages] = useState<
-    Record<string, boolean>
-  >({});
+  const [expanded, setExpanded] = useState<Record<string, boolean>>({});
   const [popupVisible, setPopupVisible] = useState(false);
   const [popupX, setPopupX] = useState(0);
   const [popupY, setPopupY] = useState(0);
-  const [longPressedMessage, setLongPressedMessage] =
-    useState<DMMessage | null>(null);
-  const [lastDMSendTime, setLastDMSendTime] = useState<number>(0);
-  const [cooldownMessage, setCooldownMessage] = useState<string | null>(null);
-  const [assignedColors, setAssignedColors] = useState<{
-    [name: string]: string;
-  }>({});
+  const [longPressed, setLongPressed] = useState<DMMessage | null>(null);
+  const [lastSend, setLastSend] = useState<number>(0);
+  const [cooldownMsg, setCooldownMsg] = useState<string | null>(null);
+  const [assignedColors, setAssignedColors] = useState<{ [n: string]: string }>(
+    {}
+  );
+  const flatListRef = useRef<FlatList<DMMessage>>(null);
 
-  // Same userColors array as in Chat.tsx
+  /* colour palette */
   const userColors = [
-    "#c177d9", // Lavender Purple
-    "#77d997", // Mint Green
-    "#d97777", // Soft Red
-    "#d9d177", // Pale Yellow
-    "#77b7d9", // Sky Blue
-    "#a477d9", // Medium Purple
-    "#d9a477", // Peach
-    "#9afbfc", // Aqua
-    "#ff9a76", // Coral
-    "#baff66", // Lime Green
-    "#ff66dc", // Hot Pink
-    "#66ffed", // Turquoise
-    "#ffee66", // Bright Yellow
-    "#ff6666", // Bright Red
-    "#66c7ff", // Electric Blue
-    "#d966ff", // Vibrant Purple
-    "#ffb266", // Orange
-    "#66ff8c", // Neon Green
-    "#ff66a3", // Pink
-    "#c4ff66", // Chartreuse
+    "#c177d9",
+    "#77d997",
+    "#d97777",
+    "#d9d177",
+    "#77b7d9",
+    "#a477d9",
+    "#d9a477",
+    "#9afbfc",
+    "#ff9a76",
+    "#baff66",
+    "#ff66dc",
+    "#66ffed",
+    "#ffee66",
+    "#ff6666",
+    "#66c7ff",
+    "#d966ff",
+    "#ffb266",
+    "#66ff8c",
+    "#ff66a3",
+    "#c4ff66",
   ];
 
-  useEffect(() => {
-    const unsub = onAuthStateChanged(auth, (user) => {
-      setCurrentUser(user);
-    });
-    return () => unsub();
-  }, []);
+  /* conversation id */
+  const conversationId =
+    currentUser?.uid && friendUid
+      ? [currentUser.uid, friendUid].sort().join("_")
+      : "";
+
+  /* ---- listeners / initialisation ---- */
+  useEffect(() => onAuthStateChanged(auth, (u) => setCurrentUser(u)), []);
 
   useEffect(() => {
     if (!currentUser) return;
-    const userRef = ref(database, `users/${currentUser.uid}/username`);
-    const unsub = onValue(userRef, (snap) => {
-      if (snap.exists()) {
-        setMyUsername(snap.val());
-      }
-    });
+    const unsub = onValue(
+      ref(database, `users/${currentUser.uid}/username`),
+      (snap) => snap.exists() && setMyUsername(snap.val())
+    );
     return () => unsub();
   }, [currentUser]);
 
-  let conversationId = "";
-  if (currentUser?.uid) {
-    const sortedIds = [currentUser.uid, friendUid].sort();
-    conversationId = `${sortedIds[0]}_${sortedIds[1]}`;
-  }
-
   useEffect(() => {
     if (!conversationId) return;
-
     const dmRef = ref(database, `DMs/${conversationId}`);
-    const unsubscribe = onValue(dmRef, (snapshot) => {
-      const data = snapshot.val();
-      const dmArray: DMMessage[] = [];
-      if (data) {
-        Object.entries(data).forEach(([msgId, raw]) => {
-          const msgData = raw as {
-            senderUid: string;
-            senderName: string;
-            text: string;
-            timestamp: number;
-          };
-          dmArray.push({
-            key: msgId,
-            senderUid: msgData.senderUid,
-            senderName: msgData.senderName,
-            text: msgData.text,
-            timestamp: msgData.timestamp,
-          });
+    const unsub = onValue(dmRef, (snap) => {
+      const arr: DMMessage[] = [];
+      snap.forEach((c) => {
+        const d = c.val() || {};
+        arr.push({
+          key: c.key!,
+          senderUid: d.senderUid,
+          senderName: d.senderName,
+          text: d.text,
+          timestamp: d.timestamp,
+          type: d.type,
+          receiptData: d.receiptData,
         });
-        dmArray.sort((a, b) => a.timestamp - b.timestamp); // Newest at bottom
-      }
-      setMessages(dmArray);
+      });
+      arr.sort((a, b) => a.timestamp - b.timestamp);
+      setMessages(arr);
+      flatListRef.current?.scrollToEnd({ animated: true });
     });
-
-    return () => unsubscribe();
+    return () => unsub();
   }, [conversationId]);
 
-  // Assign colors to unique senders, same as Chat.tsx
+  /* bubble colours */
   useEffect(() => {
-    const uniqueNames = Array.from(new Set(messages.map((m) => m.senderName)));
-    const updatedMap = { ...assignedColors };
-
-    let colorCount = Object.keys(updatedMap).length;
-    uniqueNames.forEach((name) => {
-      if (!updatedMap[name]) {
-        updatedMap[name] = userColors[colorCount % userColors.length];
-        colorCount++;
+    const uniq = new Set(messages.map((m) => m.senderName));
+    const map = { ...assignedColors };
+    let idx = Object.keys(map).length;
+    uniq.forEach((n) => {
+      if (!map[n]) {
+        map[n] = userColors[idx % userColors.length];
+        idx++;
       }
     });
+    setAssignedColors(map);
+  }, [messages]);
 
-    if (Object.keys(updatedMap).length !== Object.keys(assignedColors).length) {
-      setAssignedColors(updatedMap);
-    }
-  }, [messages, assignedColors, userColors]);
-
-  const handleSendMessage = () => {
-    if (!currentUser || !conversationId) return;
-    if (!newMessageText.trim()) return;
-
-    const currentTime = Date.now();
-    const cooldown = 1000; // 1s for DMs
-
-    if (currentTime - lastDMSendTime < cooldown) {
-      const remainingTime = Math.ceil(
-        (cooldown - (currentTime - lastDMSendTime)) / 1000
-      );
-      setCooldownMessage(
-        `Please wait ${remainingTime} second${remainingTime > 1 ? "s" : ""}`
-      );
-      setTimeout(() => setCooldownMessage(null), 2000);
+  /* send plain text */
+  const handleSend = async () => {
+    if (!currentUser || !conversationId || !newMessageText.trim()) return;
+    const now = Date.now();
+    if (now - lastSend < 1000) {
+      setCooldownMsg("wait a sec…");
+      setTimeout(() => setCooldownMsg(null), 1200);
       return;
     }
-
-    const dmRef = ref(database, `DMs/${conversationId}`);
-    const newMessageRef = push(dmRef);
-
-    const messagePayload = {
+    await set(push(ref(database, `DMs/${conversationId}`)), {
       text: newMessageText.trim(),
-      timestamp: currentTime,
+      timestamp: now,
       senderUid: currentUser.uid,
-      senderName: myUsername || "Unknown",
-    };
-
-    set(newMessageRef, messagePayload)
-      .then(() => {
-        setNewMessageText("");
-        setLastDMSendTime(currentTime);
-      })
-      .catch((err) => console.log("Error sending DM message:", err));
+      senderName: myUsername || "unknown",
+    });
+    setNewMessageText("");
+    setLastSend(now);
   };
 
-  const toggleTimestamp = (msgKey: string) => {
-    setExpandedMessages((prev) => ({
-      ...prev,
-      [msgKey]: !prev[msgKey],
-    }));
+  /* upload receipt button */
+  const handleUploadReceipt = () => {
+    if (!myUsername) return;
+    navigation.navigate("UploadReceipt", { dmId: conversationId, myUsername });
   };
 
-  const handleBubbleLongPress = (
-    pageX: number,
-    pageY: number,
-    messageItem: DMMessage
-  ) => {
-    setLongPressedMessage(messageItem);
-
-    const screenHeight = Dimensions.get("window").height;
-    const inputAreaHeight = 70;
-    const popupHeight = 60;
-
-    const adjustedY = Math.min(
-      pageY,
-      screenHeight - inputAreaHeight - popupHeight - 10
-    );
-
-    setPopupX(pageX);
-    setPopupY(adjustedY);
+  /* toggle / long-press helpers */
+  const toggleExpanded = (k: string) =>
+    setExpanded((p) => ({ ...p, [k]: !p[k] }));
+  const handleLong = (x: number, y: number, item: DMMessage) => {
+    setLongPressed(item);
+    const screenH = Dimensions.get("window").height;
+    setPopupX(x);
+    setPopupY(Math.min(y, screenH - 120));
     setPopupVisible(true);
   };
-
-  const handleCopyMessage = () => {
-    if (!longPressedMessage) return;
-    Clipboard.setString(longPressedMessage.text || "");
+  const copyMsg = () => {
+    if (!longPressed) return;
+    if ("clipboard" in navigator)
+      navigator.clipboard.writeText(longPressed.text ?? "");
+    else Clipboard.setString(longPressed.text ?? "");
     setPopupVisible(false);
   };
 
-  const renderMessage = ({ item }: { item: DMMessage }) => {
-    const isOwn = item.senderUid === currentUser?.uid;
-    const isExpanded = expandedMessages[item.key] || false;
+  /* -------- render each row -------- */
+  const Row = ({ item }: { item: DMMessage }) => {
+    const own = item.senderUid === currentUser?.uid;
+    const isReceipt = item.type === "receipt" && item.receiptData;
+    const show = expanded[item.key];
 
+    /* receipt bubble */
+    if (isReceipt) {
+      const r = item.receiptData!;
+      const buyersOf = (it: ItemType) =>
+        (it.buyers ?? [])
+          .filter((b) => Array.isArray(b.selected) && b.selected.some(Boolean))
+          .map((b) => b.name)
+          .join(", ");
+      return (
+        <TouchableOpacity
+          activeOpacity={0.9}
+          onPress={() => toggleExpanded(item.key)}
+          onLongPress={(e) =>
+            handleLong(e.nativeEvent.pageX, e.nativeEvent.pageY, item)
+          }
+          style={[
+            styles.messageBubble,
+            styles.receiptBubble,
+            own ? styles.currentUserReceipt : styles.otherUserReceipt,
+          ]}
+        >
+          <Text
+            style={[
+              styles.senderName,
+              own
+                ? styles.currentUserSender
+                : { color: assignedColors[item.senderName] || "#fff" },
+            ]}
+          >
+            {item.senderName} uploaded a receipt
+          </Text>
+
+          <Text style={styles.receiptTitle}>{r.name}</Text>
+
+          {show && (
+            <>
+              <Text style={styles.receiptInfo}>
+                tax: ${r.tax?.toFixed(2) ?? "0.00"}
+              </Text>
+
+              <View style={styles.itemList}>
+                {r.items.map((it, i) => {
+                  const tot = it.price * it.quantity;
+                  return (
+                    <View key={i} style={styles.itemRow}>
+                      <Text style={styles.itemText}>
+                        {it.item} (x{it.quantity}) – ${tot.toFixed(2)}
+                      </Text>
+                      <Text style={styles.buyerText}>
+                        buyers: {buyersOf(it) || "none"}
+                      </Text>
+                    </View>
+                  );
+                })}
+              </View>
+
+              <Text style={styles.timeText}>
+                {new Date(item.timestamp).toLocaleString()}
+              </Text>
+            </>
+          )}
+        </TouchableOpacity>
+      );
+    }
+
+    /* plain text bubble */
     return (
       <TouchableOpacity
         activeOpacity={0.8}
-        onPress={() => toggleTimestamp(item.key)}
-        onLongPress={(e) => {
-          const { pageX, pageY } = e.nativeEvent;
-          handleBubbleLongPress(pageX, pageY, item);
-        }}
+        onPress={() => toggleExpanded(item.key)}
+        onLongPress={(e) =>
+          handleLong(e.nativeEvent.pageX, e.nativeEvent.pageY, item)
+        }
         style={[
           styles.messageBubble,
-          isOwn
+          own
             ? { backgroundColor: theme.yellow, alignSelf: "flex-end" }
-            : {
-                backgroundColor: "#0C3A50", // Match Chat.tsx
-                alignSelf: "flex-start",
-              },
+            : { backgroundColor: "#0C3A50", alignSelf: "flex-start" },
         ]}
       >
         <Text
-          style={{
-            fontWeight: "bold",
-            color: isOwn
-              ? theme.black
-              : assignedColors[item.senderName] || "#fff",
-            marginBottom: 3,
-          }}
+          style={[
+            styles.senderName,
+            own
+              ? styles.currentUserSender
+              : { color: assignedColors[item.senderName] || "#fff" },
+          ]}
         >
           {item.senderName}:
         </Text>
-        <Text style={{ color: isOwn ? theme.black : "#fff" }}>{item.text}</Text>
-        {isExpanded && (
-          <Text
-            style={{
-              marginTop: 5,
-              fontSize: 12,
-              color: isOwn ? "#333" : "#ccc",
-            }}
-          >
+        <Text style={{ color: own ? theme.black : "#fff" }}>
+          {item.text ?? ""}
+        </Text>
+        {show && (
+          <Text style={styles.timePlain}>
             {new Date(item.timestamp).toLocaleString()}
           </Text>
         )}
@@ -281,11 +314,11 @@ const DM = () => {
     );
   };
 
+  /* ui ------------ */
   return (
     <View style={[styles.container, { backgroundColor: theme.offWhite2 }]}>
-      <View
-        style={[styles.headerContainer, { backgroundColor: theme.offWhite2 }]}
-      >
+      {/* header */}
+      <View style={[styles.headerBar, { backgroundColor: theme.offWhite2 }]}>
         <TouchableOpacity onPress={() => navigation.goBack()}>
           <FontAwesome5
             name="arrow-left"
@@ -300,43 +333,50 @@ const DM = () => {
         <View style={{ width: 24, marginLeft: 10 }} />
       </View>
 
+      {/* list */}
       <FlatList
-        data={messages} // No reverse, newest at bottom
-        renderItem={renderMessage}
-        keyExtractor={(item) => item.key}
+        ref={flatListRef}
+        data={messages}
+        renderItem={Row}
+        keyExtractor={(i) => i.key}
         contentContainerStyle={styles.messagesContainer}
+        onContentSizeChange={() =>
+          flatListRef.current?.scrollToEnd({ animated: true })
+        }
       />
 
-      {cooldownMessage && (
+      {cooldownMsg && (
         <View style={styles.cooldownPopup}>
-          <Text style={styles.cooldownText}>{cooldownMessage}</Text>
+          <Text style={styles.cooldownText}>{cooldownMsg}</Text>
         </View>
       )}
 
+      {/* input row */}
       <View style={[styles.inputArea, { borderTopColor: theme.yellow }]}>
+        <TouchableOpacity onPress={handleUploadReceipt} style={styles.iconWrap}>
+          <FontAwesome name="file-text-o" size={24} color={theme.yellow} />
+        </TouchableOpacity>
         <TextInput
           style={[
             styles.input,
-            {
-              backgroundColor: "#114B68", // Match Chat.tsx
-              borderColor: theme.yellow,
-            },
+            { backgroundColor: "#114B68", borderColor: theme.yellow },
           ]}
-          placeholder="Type a message..."
+          placeholder="type a message…"
           placeholderTextColor="#ccc"
           value={newMessageText}
           onChangeText={setNewMessageText}
-          onSubmitEditing={handleSendMessage}
+          onSubmitEditing={handleSend}
           returnKeyType="send"
         />
         <Pressable
           style={[styles.sendButton, { backgroundColor: theme.yellow }]}
-          onPress={handleSendMessage}
+          onPress={handleSend}
         >
-          <Text style={styles.sendButtonText}>Send</Text>
+          <Text style={styles.sendText}>send</Text>
         </Pressable>
       </View>
 
+      {/* popup */}
       <Modal visible={popupVisible} transparent animationType="fade">
         <TouchableWithoutFeedback onPress={() => setPopupVisible(false)}>
           <View style={styles.modalOverlay} />
@@ -344,25 +384,22 @@ const DM = () => {
         {popupVisible && (
           <Animated.View
             style={[
-              styles.popupContainer,
+              styles.popup,
               {
                 top: popupY,
                 left: Math.min(popupX, Dimensions.get("window").width - 180),
               },
             ]}
           >
-            <TouchableOpacity
-              onPress={handleCopyMessage}
-              style={styles.popupItem}
-            >
-              <View style={styles.popupItemContent}>
+            <TouchableOpacity onPress={copyMsg} style={styles.popupItem}>
+              <View style={styles.popupRow}>
                 <Icon
                   name="copy"
                   size={18}
                   color="#fff"
-                  style={styles.popupIcon}
+                  style={{ marginRight: 12 }}
                 />
-                <Text style={styles.popupText}>Copy</Text>
+                <Text style={styles.popupText}>copy</Text>
               </View>
             </TouchableOpacity>
           </Animated.View>
@@ -374,54 +411,64 @@ const DM = () => {
 
 export default DM;
 
+/* -------------- styles ---------------- */
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-  },
-  headerContainer: {
+  container: { flex: 1 },
+  headerBar: {
     flexDirection: "row",
     alignItems: "center",
     paddingHorizontal: 10,
     paddingVertical: 15,
-    elevation: 4,
   },
-  header: {
-    fontSize: 20,
-    fontWeight: "bold",
-    flex: 1,
-    textAlign: "center",
-  },
-  messagesContainer: {
-    paddingHorizontal: 10,
-    paddingBottom: 10,
-  },
+  header: { fontSize: 20, fontWeight: "bold", flex: 1, textAlign: "center" },
+
+  /* list */
+  messagesContainer: { paddingHorizontal: 10, paddingBottom: 10 },
   messageBubble: {
-    maxWidth: "80%",
+    maxWidth: "95%",
     marginBottom: 8,
     padding: 10,
-    borderRadius: 10, // Match Chat.tsx
+    borderRadius: 10,
   },
+
+  /* plain bubble bits */
+  senderName: { fontWeight: "bold", marginBottom: 3 },
+  currentUserSender: { color: "#000" },
+  timePlain: { marginTop: 5, fontSize: 12, color: "#ccc" },
+
+  /* receipt bubble colours */
+  receiptBubble: { backgroundColor: "#194D33" },
+  currentUserReceipt: { alignSelf: "flex-end", backgroundColor: "#194D33"},
+  otherUserReceipt: { alignSelf: "flex-start" },
+
+  /* receipt bubble text */
+  receiptTitle: { fontWeight: "600", color: "#fff", marginTop: 2 },
+  receiptInfo: { color: "#ddd", marginTop: 4 },
+  itemList: { marginTop: 6 },
+  itemRow: { marginBottom: 4 },
+  itemText: { color: "#fff" },
+  buyerText: { color: "#ccc", fontSize: 12, marginLeft: 10 },
+  timeText: { marginTop: 5, fontSize: 12, color: "#ccc" },
+
+  /* cooldown + input */
   cooldownPopup: {
     position: "absolute",
     bottom: 70,
     left: 10,
     right: 10,
-    backgroundColor: "rgba(128, 128, 128, 0.9)",
+    backgroundColor: "rgba(128,128,128,0.9)",
     padding: 10,
     borderRadius: 8,
     alignItems: "center",
   },
-  cooldownText: {
-    color: "white",
-    fontSize: 14,
-    fontWeight: "bold",
-  },
+  cooldownText: { color: "#fff", fontSize: 14, fontWeight: "bold" },
   inputArea: {
     flexDirection: "row",
     padding: 10,
     borderTopWidth: 1,
     alignItems: "center",
   },
+  iconWrap: { padding: 5, marginRight: 8 },
   input: {
     flex: 1,
     paddingVertical: 8,
@@ -429,7 +476,7 @@ const styles = StyleSheet.create({
     borderRadius: 20,
     marginRight: 8,
     borderWidth: 1,
-    color: "white",
+    color: "#fff",
   },
   sendButton: {
     paddingVertical: 10,
@@ -437,45 +484,20 @@ const styles = StyleSheet.create({
     borderRadius: 20,
     justifyContent: "center",
   },
-  sendButtonText: {
-    color: "black",
-    fontWeight: "bold",
-    fontSize: 16,
-  },
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: "rgba(0, 0, 0, 0.6)",
-  },
-  popupContainer: {
+  sendText: { color: "#000", fontWeight: "bold", fontSize: 16 },
+
+  /* popup */
+  modalOverlay: { flex: 1, backgroundColor: "rgba(0,0,0,0.6)" },
+  popup: {
     position: "absolute",
     width: 180,
     backgroundColor: "#1E2A38",
     borderRadius: 12,
     padding: 6,
-    zIndex: 999,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-    elevation: 8,
     borderWidth: 1,
-    borderColor: "rgba(255, 255, 255, 0.1)",
+    borderColor: "rgba(255,255,255,0.1)",
   },
-  popupItem: {
-    paddingVertical: 10,
-    paddingHorizontal: 12,
-    borderRadius: 8,
-  },
-  popupItemContent: {
-    flexDirection: "row",
-    alignItems: "center",
-  },
-  popupIcon: {
-    marginRight: 12,
-  },
-  popupText: {
-    color: "#fff",
-    fontSize: 16,
-    fontWeight: "500",
-  },
+  popupItem: { paddingVertical: 10, paddingHorizontal: 12, borderRadius: 8 },
+  popupRow: { flexDirection: "row", alignItems: "center" },
+  popupText: { color: "#fff", fontSize: 16, fontWeight: "500" },
 });

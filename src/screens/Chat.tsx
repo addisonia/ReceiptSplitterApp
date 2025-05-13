@@ -1,5 +1,5 @@
 // src/screens/Chat.tsx
-import React, { useState, useEffect, useCallback, useRef } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import {
   View,
   Text,
@@ -27,7 +27,9 @@ import Icon from "react-native-vector-icons/Feather";
 import { useTheme } from "../context/ThemeContext";
 import { colors } from "../components/ColorThemes";
 
-const SPLIT_STORAGE_KEY = "@split_state";
+// ---- NEW IMPORTS FOR NOTIFICATIONS ----
+import * as Notifications from "expo-notifications";
+import Constants from "expo-constants";
 
 type ChatNavProp = NativeStackNavigationProp<RootStackParamList, "Chat">;
 
@@ -77,6 +79,7 @@ type BuyerType = {
   selected: boolean[];
 };
 
+// normalizing functions (unchanged)
 function normalizeBuyer(rawBuyer: any): BuyerType {
   if (typeof rawBuyer === "string") {
     return { name: rawBuyer, selected: [] };
@@ -157,6 +160,21 @@ function normalizeReceiptData(receiptKey: string, rawData: any): ReceiptData {
   };
 }
 
+// ---- HELPER FUNCTION TO SCHEDULE A LOCAL NOTIFICATION ----
+async function scheduleLocalNotification(messageText: string) {
+  // If the user is in the app, this is just a basic local notification.
+  // If the app is backgrounded or closed, they might not see this immediately.
+  // A real solution usually uses push tokens on a backend to notify others.
+
+  await Notifications.scheduleNotificationAsync({
+    content: {
+      title: "New Group Chat Message",
+      body: messageText,
+    },
+    trigger: null, // triggers immediately
+  });
+}
+
 const Chat = () => {
   const { theme, mode } = useTheme();
   const navigation = useNavigation<ChatNavProp>();
@@ -199,9 +217,7 @@ const Chat = () => {
     null
   );
 
-  const [participantUsernames, setParticipantUsernames] = useState<string[]>(
-    []
-  );
+  const [participantUsernames, setParticipantUsernames] = useState<string[]>([]);
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const [cooldownMessage, setCooldownMessage] = useState<string | null>(null);
 
@@ -236,6 +252,18 @@ const Chat = () => {
     mode === "yuck" || mode === "dark" || mode === "random"
       ? "#ffffff"
       : "#000";
+
+  useEffect(() => {
+    // request notification permissions if you haven't already
+    (async () => {
+      if (Constants.isDevice) {
+        const { status } = await Notifications.requestPermissionsAsync();
+        if (status !== "granted") {
+          Alert.alert("No notification permissions granted.");
+        }
+      }
+    })();
+  }, []);
 
   useEffect(() => {
     const unsubscribeAuth = onAuthStateChanged(auth, (currentUser) => {
@@ -425,7 +453,7 @@ const Chat = () => {
     }
   }, [messages, assignedColors, userColors]);
 
-  const handleSendMessage = () => {
+  const handleSendMessage = async () => {
     if (!isSignedIn) {
       setCooldownMessage("Sign in to send messages.");
       setTimeout(() => setCooldownMessage(null), 2000);
@@ -448,7 +476,9 @@ const Chat = () => {
         (cooldown - (currentTime - lastSendTime)) / 1000
       );
       setCooldownMessage(
-        `Please wait ${remainingTime} second${remainingTime > 1 ? "s" : ""}`
+        `Please wait ${remainingTime} second${
+          remainingTime > 1 ? "s" : ""
+        } before sending again.`
       );
       setTimeout(() => setCooldownMessage(null), 2000);
       return;
@@ -463,10 +493,13 @@ const Chat = () => {
         timestamp: currentTime,
         senderUid: user?.uid || "unknown-uid",
       };
-      set(newMessageRef, messagePayload).then(() => {
-        setNewMessageText("");
-        setLastGlobalSendTime(currentTime);
-      });
+      await set(newMessageRef, messagePayload);
+      setNewMessageText("");
+      setLastGlobalSendTime(currentTime);
+
+      // (Optional) Fire a local notification for demonstration
+      await scheduleLocalNotification("New message in Global Chat");
+
     } else {
       const groupMessagesRef = ref(
         database,
@@ -479,10 +512,14 @@ const Chat = () => {
         timestamp: currentTime,
         senderUid: user?.uid || "unknown-uid",
       };
-      set(newGroupMsgRef, messagePayload).then(() => {
-        setNewMessageText("");
-        setLastGroupSendTime(currentTime);
-      });
+      await set(newGroupMsgRef, messagePayload);
+      setNewMessageText("");
+      setLastGroupSendTime(currentTime);
+
+      // (Optional) Fire a local notification for demonstration
+      await scheduleLocalNotification(
+        `New group message in ${groupChatsMap[selectedChat]?.name ?? "Group"}`
+      );
     }
   };
 
@@ -524,7 +561,6 @@ const Chat = () => {
 
   const handleCopyMessage = () => {
     if (!longPressedMessage) return;
-    // Clipboard.setString is deprecated; use setStringAsync if available
     navigator.clipboard
       ? navigator.clipboard.writeText(longPressedMessage.text || "")
       : console.warn("Clipboard API not available");
@@ -550,10 +586,7 @@ const Chat = () => {
       fromUid: myUid,
       fromUsername: localName,
     });
-    await set(
-      ref(database, `outgoingRequests/${myUid}/${popupTargetUid}`),
-      true
-    );
+    await set(ref(database, `outgoingRequests/${myUid}/${popupTargetUid}`), true);
     setPopupVisible(false);
     Alert.alert("Friend request sent", `Sent to ${popupTargetName}.`);
   };
@@ -599,33 +632,26 @@ const Chat = () => {
 
   const handleLeaveGroup = () => {
     if (!user) return;
-    Alert.alert(
-      "Leave Group",
-      "Are you sure you want to leave this groupchat?",
-      [
-        { text: "Cancel", style: "cancel" },
-        {
-          text: "Yes",
-          style: "destructive",
-          onPress: async () => {
-            try {
-              await remove(
-                ref(
-                  database,
-                  `groupChats/${selectedChat}/participants/${user.uid}`
-                )
-              );
-              await remove(
-                ref(database, `users/${user.uid}/groups/${selectedChat}`)
-              );
-              setSelectedChat("global");
-            } catch (err) {
-              console.error("Error leaving group:", err);
-            }
-          },
+    Alert.alert("Leave Group", "Are you sure you want to leave this group?", [
+      { text: "Cancel", style: "cancel" },
+      {
+        text: "Yes",
+        style: "destructive",
+        onPress: async () => {
+          try {
+            await remove(
+              ref(database, `groupChats/${selectedChat}/participants/${user.uid}`)
+            );
+            await remove(
+              ref(database, `users/${user.uid}/groups/${selectedChat}`)
+            );
+            setSelectedChat("global");
+          } catch (err) {
+            console.error("Error leaving group:", err);
+          }
         },
-      ]
-    );
+      },
+    ]);
   };
 
   const handleTopRightIconPress = () => {
@@ -709,7 +735,7 @@ const Chat = () => {
     );
   }
 
-  const MessageItem = React.memo(({ item }: { item: Message }) => {
+  const MessageItem = ({ item }: { item: Message }) => {
     const isCurrentUserMessage = user ? item.senderUid === user.uid : false;
     const isExpanded = expandedMessages[item.key] || false;
 
@@ -859,7 +885,7 @@ const Chat = () => {
         )}
       </TouchableOpacity>
     );
-  });
+  };
 
   return (
     <View style={[styles.container, { backgroundColor: theme.offWhite2 }]}>
@@ -924,26 +950,20 @@ const Chat = () => {
         ref={flatListRef}
         data={messages}
         renderItem={({ item }) => <MessageItem item={item} />}
-        keyExtractor={(item) => item.key}
+        keyExtractor={(item) => `${selectedChat}-${item.key}`}
         contentContainerStyle={styles.messagesContainer}
         onScroll={(e) => {
           const { contentOffset, layoutMeasurement, contentSize } =
             e.nativeEvent;
-          // figure out if the user is near the bottom
           const closeToBottom =
-            contentOffset.y + layoutMeasurement.height >=
-            contentSize.height - 50;
+            contentOffset.y + layoutMeasurement.height >= contentSize.height - 50;
           setShowScrollDown(!closeToBottom);
         }}
         scrollEventThrottle={200}
         onContentSizeChange={() => {
-          // only auto-scroll if:
-          //   1) NOT the first time the chat has loaded
-          //   2) we are not showing the scrollDown button (so user is near bottom)
           if (!initialLoad && !showScrollDown) {
             flatListRef.current?.scrollToEnd({ animated: true });
           }
-          // after the first time content shows up, set initialLoad to false
           setInitialLoad(false);
         }}
       />
@@ -1003,7 +1023,89 @@ const Chat = () => {
               },
             ]}
           >
-            {/* ... same popup items ... */}
+            {/* You can add items here for "Copy", "Add Friend", etc. */}
+            <TouchableOpacity
+              onPress={handleCopyMessage}
+              style={styles.popupItem}
+            >
+              <View style={styles.popupItemContent}>
+                <Icon
+                  name="copy"
+                  size={18}
+                  color="#fff"
+                  style={styles.popupIcon}
+                />
+                <Text style={styles.popupText}>Copy</Text>
+              </View>
+            </TouchableOpacity>
+
+            <View style={styles.popupDivider} />
+
+            {!isTargetFriend ? (
+              <TouchableOpacity
+                onPress={handleAddFriend}
+                style={styles.popupItem}
+              >
+                <View style={styles.popupItemContent}>
+                  <Icon
+                    name="user-plus"
+                    size={18}
+                    color="#fff"
+                    style={styles.popupIcon}
+                  />
+                  <Text style={styles.popupText}>Add Friend</Text>
+                </View>
+              </TouchableOpacity>
+            ) : (
+              <TouchableOpacity
+                onPress={confirmRemoveFriend}
+                style={styles.popupItem}
+              >
+                <View style={styles.popupItemContent}>
+                  <Icon
+                    name="user-x"
+                    size={18}
+                    color="red"
+                    style={styles.popupIcon}
+                  />
+                  <Text style={styles.popupText}>Remove Friend</Text>
+                </View>
+              </TouchableOpacity>
+            )}
+
+            <View style={styles.popupDivider} />
+
+            <TouchableOpacity onPress={handleMessage} style={styles.popupItem}>
+              <View style={styles.popupItemContent}>
+                <Icon
+                  name="message-circle"
+                  size={18}
+                  color="#fff"
+                  style={styles.popupIcon}
+                />
+                <Text style={styles.popupText}>Message</Text>
+              </View>
+            </TouchableOpacity>
+
+            {longPressedMessage?.type === "receipt" && (
+              <>
+                <View style={styles.popupDivider} />
+                <TouchableOpacity
+                  onPress={handleImportReceipt}
+                  style={styles.popupItem}
+                >
+                  <View style={styles.popupItemContent}>
+                    <Icon
+                      name="download-cloud"
+                      size={18}
+                      color="#fff"
+                      style={styles.popupIcon}
+                    />
+                    <Text style={styles.popupText}>Import Receipt</Text>
+                  </View>
+                </TouchableOpacity>
+              </>
+            )}
           </Animated.View>
         )}
       </Modal>
@@ -1124,7 +1226,7 @@ const styles = StyleSheet.create({
   scrollToBottomButton: {
     position: "absolute",
     right: 16,
-    bottom: 100, // just above your input area
+    bottom: 100,
     backgroundColor: "rgba(0, 0, 0, 0.5)",
     padding: 10,
     borderRadius: 20,
