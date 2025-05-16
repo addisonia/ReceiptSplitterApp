@@ -15,6 +15,9 @@ import { useNavigation } from "@react-navigation/native";
 import { StackNavigationProp } from "@react-navigation/stack";
 import { RootStackParamList } from "../types/RootStackParams";
 import { useTheme } from "../context/ThemeContext";
+import AsyncStorage from "@react-native-async-storage/async-storage";
+
+const HIGH_SCORE_KEY = "snake_high_score";
 
 const snakeSize = 20;
 
@@ -67,6 +70,22 @@ const Snake: React.FC = () => {
     growthRef.current = gameModes[selectedMode].growthRate;
     resetGame();
   }, [selectedMode]);
+
+  // load once when the screen mounts
+  useEffect(() => {
+    (async () => {
+      try {
+        const raw = await AsyncStorage.getItem(HIGH_SCORE_KEY);
+        if (raw !== null) {
+          const stored = parseInt(raw, 10);
+          setHighScore(stored);
+          highScoreRef.current = stored;
+        }
+      } catch (err) {
+        console.log("cannot read high score", err);
+      }
+    })();
+  }, []);
 
   const placeFood = () => {
     const columns = gameAreaWidth / snakeSize;
@@ -197,6 +216,11 @@ const Snake: React.FC = () => {
       if (scoreRef.current > highScoreRef.current) {
         setHighScore(scoreRef.current);
         highScoreRef.current = scoreRef.current;
+
+        // save to storage (fire-and-forget; no need to await)
+        AsyncStorage.setItem(HIGH_SCORE_KEY, scoreRef.current.toString()).catch(
+          (err) => console.log("cannot save high score", err)
+        );
       }
     } else {
       snakeRef.current.pop();
