@@ -1,5 +1,11 @@
 // src/screens/Snake.tsx
-import React, { useState, useEffect, useRef } from "react";
+import React, {
+  useState,
+  useRef,
+  useEffect,
+  useCallback,
+  PropsWithChildren,
+} from "react";
 import {
   View,
   Text,
@@ -10,214 +16,164 @@ import {
   TouchableWithoutFeedback,
 } from "react-native";
 import Icon from "react-native-vector-icons/FontAwesome";
-import { Picker } from "@react-native-picker/picker";
-import { useNavigation } from "@react-navigation/native";
+import {
+  useNavigation,
+  useFocusEffect,
+  StackActions,
+} from "@react-navigation/native";
 import { StackNavigationProp } from "@react-navigation/stack";
 import { RootStackParamList } from "../types/RootStackParams";
 import { useTheme } from "../context/ThemeContext";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 
-const HIGH_SCORE_KEY = "snake_high_score";
+/* -------------------------------------------------- */
+/* constants                                           */
+/* -------------------------------------------------- */
 
+const HIGH_SCORE_KEY = "snake_high_score";
 const snakeSize = 20;
 
-const gameModes: Record<string, { speed: number; growthRate: number }> = {
+const gameModes = {
   easy: { speed: 8, growthRate: 4 },
   normal: { speed: 14, growthRate: 3 },
   hard: { speed: 24, growthRate: 1 },
   impossible: { speed: 50, growthRate: 0 },
-  actually_impossible: { speed: 0, growthRate: 0 },
+  actually_impossible: { speed: 0.0001, growthRate: 0 }, // avoids /0
   patience: { speed: 1, growthRate: 0 },
-};
+} satisfies Record<string, { speed: number; growthRate: number }>;
 
-const { width: windowWidth, height: windowHeight } = Dimensions.get("window");
-const gameAreaWidth = Math.floor((windowWidth * 0.9) / snakeSize) * snakeSize;
-const gameAreaHeight =
-  Math.floor((windowHeight * 0.58) / snakeSize) * snakeSize;
+type Mode = keyof typeof gameModes;
+
+interface Coord {
+  x: number;
+  y: number;
+}
+
+const { width: winW, height: winH } = Dimensions.get("window");
+const gameW = Math.floor((winW * 0.9) / snakeSize) * snakeSize;
+const gameH = Math.floor((winH * 0.58) / snakeSize) * snakeSize;
+
+/* -------------------------------------------------- */
+/* component                                          */
+/* -------------------------------------------------- */
 
 const Snake: React.FC = () => {
-  const { theme, mode } = useTheme();
-  const navigation =
-    useNavigation<StackNavigationProp<RootStackParamList, "Snake">>();
+  const { theme, mode: themeMode } = useTheme();
+  const nav = useNavigation<StackNavigationProp<RootStackParamList, "Snake">>();
 
-  const [selectedMode, setSelectedMode] =
-    useState<keyof typeof gameModes>("normal");
-  const [highScore, setHighScore] = useState(1);
-  const [homeIconColor, setHomeIconColor] = useState(
-    mode === "yuck" ? "#e3d400" : theme.yellow
-  );
-  const [isModeSelectionOpen, setIsModeSelectionOpen] = useState(false);
+  /* ------------------------------------------------ */
+  /* refs + state                                     */
+  /* ------------------------------------------------ */
 
-  const snakeRef = useRef([{ x: 0, y: 0 }]);
-  const [showGameOver, setShowGameOver] = useState(false);
-  const foodRef = useRef({ x: 0, y: 0 });
-  const directionRef = useRef({ x: 0, y: 0 });
-  const isPausedRef = useRef(false);
-  const lastRenderTimeRef = useRef(0);
-  const gameOverRef = useRef(false);
+  const [selectedMode, setSelectedMode] = useState<Mode>("normal");
+  const speedRef = useRef<number>(gameModes.normal.speed);
+  const growthRef = useRef<number>(gameModes.normal.growthRate);
 
-  const scoreRef = useRef(0);
-  const highScoreRef = useRef(highScore);
+  const snakeRef = useRef<Coord[]>([{ x: 0, y: 0 }]);
+  const foodRef = useRef<Coord>({ x: 0, y: 0 });
+  const dirRef = useRef<Coord>({ x: 0, y: 0 });
 
-  const speedRef = useRef(gameModes[selectedMode].speed);
-  const growthRef = useRef(gameModes[selectedMode].growthRate);
+  const frameIdRef = useRef<number | null>(null);
+  const lastRenderRef = useRef<number>(0);
+  const pausedRef = useRef<boolean>(false);
+  const gameOverRef = useRef<boolean>(false);
 
-  const [tick, setTick] = useState(0);
+  const scoreRef = useRef<number>(1);
+  const hiScoreRef = useRef<number>(1);
+
+  // regular state for rerenders
+  const [screenTick, setScreenTick] = useState(0);
   const [pauseTick, setPauseTick] = useState(0);
+  const [showModal, setShowModal] = useState(false);
+  const [hiScore, setHiScore] = useState(1);
+  const [homeClr, setHomeClr] = useState(
+    themeMode === "yuck" ? "#e3d400" : theme.yellow
+  );
+  const [pickerOpen, setPickerOpen] = useState(false);
 
-  useEffect(() => {
-    speedRef.current = gameModes[selectedMode].speed;
-    growthRef.current = gameModes[selectedMode].growthRate;
-    resetGame();
-  }, [selectedMode]);
-
-  // load once when the screen mounts
-  useEffect(() => {
-    (async () => {
-      try {
-        const raw = await AsyncStorage.getItem(HIGH_SCORE_KEY);
-        if (raw !== null) {
-          const stored = parseInt(raw, 10);
-          setHighScore(stored);
-          highScoreRef.current = stored;
-        }
-      } catch (err) {
-        console.log("cannot read high score", err);
-      }
-    })();
-  }, []);
+  /* ------------------------------------------------ */
+  /* helpers                                          */
+  /* ------------------------------------------------ */
 
   const placeFood = () => {
-    const columns = gameAreaWidth / snakeSize;
-    const rows = gameAreaHeight / snakeSize;
+    const cols = gameW / snakeSize;
+    const rows = gameH / snakeSize;
 
-    let minX = 1;
-    let minY = 1;
-    let maxX = columns - 2;
-    let maxY = rows - 2;
+    const minX = 1;
+    const minY = 1;
+    const maxX = cols - 2;
+    const maxY = rows - 2;
 
-    let newFood: { x: number; y: number };
+    let pos: Coord;
     do {
-      const fx =
-        Math.floor(Math.random() * (maxX - minX + 1) + minX) * snakeSize;
-      const fy =
-        Math.floor(Math.random() * (maxY - minY + 1) + minY) * snakeSize;
-      newFood = { x: fx, y: fy };
-    } while (
-      snakeRef.current.some((seg) => seg.x === newFood.x && seg.y === newFood.y)
-    );
+      pos = {
+        x: Math.floor(Math.random() * (maxX - minX + 1) + minX) * snakeSize,
+        y: Math.floor(Math.random() * (maxY - minY + 1) + minY) * snakeSize,
+      };
+    } while (snakeRef.current.some((s) => s.x === pos.x && s.y === pos.y));
 
-    foodRef.current = newFood;
+    foodRef.current = pos;
   };
 
-  const resetGame = () => {
+  const resetGame = useCallback(() => {
     snakeRef.current = [{ x: 0, y: 0 }];
-    directionRef.current = { x: 0, y: 0 };
-    gameOverRef.current = false;
-    setShowGameOver(false);
+    dirRef.current = { x: 0, y: 0 };
     scoreRef.current = 1;
+    gameOverRef.current = false;
+    setShowModal(false);
     placeFood();
-    setTick((t) => t + 1);
-  };
 
-  const checkCollisions = (head: { x: number; y: number }) => {
-    if (
+    // reset timer so new speed applies instantly
+    lastRenderRef.current = performance.now();
+    setScreenTick((t) => t + 1);
+  }, []);
+
+  const hitWallOrSelf = (head: Coord) => {
+    const hitWall =
       head.x < 0 ||
-      head.x >= gameAreaWidth - snakeSize ||
+      head.x >= gameW - snakeSize ||
       head.y < 0 ||
-      head.y >= gameAreaHeight - snakeSize
-    ) {
-      return true;
-    }
-    return snakeRef.current
+      head.y >= gameH - snakeSize;
+
+    const hitSelf = snakeRef.current
       .slice(1)
-      .some((seg) => seg.x === head.x && seg.y === head.y);
+      .some((s) => s.x === head.x && s.y === head.y);
+
+    return hitWall || hitSelf;
   };
 
-  const GameOverModal = () => {
-    const [isRestartPressed, setIsRestartPressed] = useState(false);
-    return (
-      <View style={styles.gameOverModal}>
-        <View
-          style={[
-            styles.gameOverContent,
-            {
-              backgroundColor: mode === "yuck" ? "#5c540b" : theme.offWhite2,
-              borderColor: mode === "yuck" ? "#e3d400" : theme.yellow,
-            },
-          ]}
-        >
-          <Text
-            style={[
-              styles.gameOverTitle,
-              { color: mode === "yuck" ? "#e3d400" : theme.yellow },
-            ]}
-          >
-            game over
-          </Text>
-          <Text style={styles.gameOverText}>score: {scoreRef.current}</Text>
-          <TouchableOpacity
-            style={[
-              styles.gameOverButton,
-              {
-                backgroundColor: isRestartPressed
-                  ? mode === "yuck"
-                    ? "#ff4444"
-                    : theme.blood
-                  : mode === "yuck"
-                  ? "#e3d400"
-                  : theme.yellow,
-              },
-              { borderColor: theme.black },
-            ]}
-            onPressIn={() => setIsRestartPressed(true)}
-            onPressOut={() => setIsRestartPressed(false)}
-            onPress={() => {
-              gameOverRef.current = false;
-              resetGame();
-            }}
-            activeOpacity={1}
-            hitSlop={{ top: 20, bottom: 20, left: 20, right: 20 }}
-          >
-            <Text style={styles.gameOverButtonText}>restart</Text>
-          </TouchableOpacity>
-        </View>
-      </View>
-    );
-  };
+  /* ------------------------------------------------ */
+  /* main loop                                        */
+  /* ------------------------------------------------ */
 
   const update = () => {
-    if (directionRef.current.x === 0 && directionRef.current.y === 0) {
-      return;
-    }
+    if (dirRef.current.x === 0 && dirRef.current.y === 0) return;
 
-    const currentHead = snakeRef.current[0];
-    const newHead = {
-      x: currentHead.x + directionRef.current.x * snakeSize,
-      y: currentHead.y + directionRef.current.y * snakeSize,
+    const head = snakeRef.current[0];
+    const newHead: Coord = {
+      x: head.x + dirRef.current.x * snakeSize,
+      y: head.y + dirRef.current.y * snakeSize,
     };
 
-    if (checkCollisions(newHead)) {
+    if (hitWallOrSelf(newHead)) {
       gameOverRef.current = true;
-      setShowGameOver(true);
+      setShowModal(true);
       return;
     }
 
     snakeRef.current.unshift(newHead);
+
     if (newHead.x === foodRef.current.x && newHead.y === foodRef.current.y) {
+      // eat
       scoreRef.current += growthRef.current + 1;
       for (let i = 0; i < growthRef.current; i++) {
-        snakeRef.current.push({
-          ...snakeRef.current[snakeRef.current.length - 1],
-        });
+        snakeRef.current.push({ ...snakeRef.current.at(-1)! });
       }
       placeFood();
 
-      if (scoreRef.current > highScoreRef.current) {
-        setHighScore(scoreRef.current);
-        highScoreRef.current = scoreRef.current;
-
-        // save to storage (fire-and-forget; no need to await)
+      if (scoreRef.current > hiScoreRef.current) {
+        hiScoreRef.current = scoreRef.current;
+        setHiScore(scoreRef.current);
         AsyncStorage.setItem(HIGH_SCORE_KEY, scoreRef.current.toString()).catch(
           (err) => console.log("cannot save high score", err)
         );
@@ -225,94 +181,123 @@ const Snake: React.FC = () => {
     } else {
       snakeRef.current.pop();
     }
-    setTick((t) => t + 1);
+
+    setScreenTick((t) => t + 1);
   };
 
-  const gameLoop = (currentTime: number) => {
-    if (isPausedRef.current || gameOverRef.current) {
-      lastRenderTimeRef.current = currentTime;
-      requestAnimationFrame(gameLoop);
+  const loop = (time: number) => {
+    if (pausedRef.current || gameOverRef.current) {
+      lastRenderRef.current = time;
+      frameIdRef.current = requestAnimationFrame(loop);
       return;
     }
-    const secsSinceLast = (currentTime - lastRenderTimeRef.current) / 1000;
-    if (speedRef.current > 0 && secsSinceLast < 1 / speedRef.current) {
-      requestAnimationFrame(gameLoop);
-      return;
+
+    const delta = (time - lastRenderRef.current) / 1000;
+    if (delta >= 1 / speedRef.current) {
+      lastRenderRef.current = time;
+      update();
     }
-    lastRenderTimeRef.current = currentTime;
-    update();
-    requestAnimationFrame(gameLoop);
+    frameIdRef.current = requestAnimationFrame(loop);
   };
 
-  const leftArrow = () => {
-    if (directionRef.current.x === 0) directionRef.current = { x: -1, y: 0 };
-  };
-  const upArrow = () => {
-    if (directionRef.current.y === 0) directionRef.current = { x: 0, y: -1 };
-  };
-  const downArrow = () => {
-    if (directionRef.current.y === 0) directionRef.current = { x: 0, y: 1 };
-  };
-  const rightArrow = () => {
-    if (directionRef.current.x === 0) directionRef.current = { x: 1, y: 0 };
+  /* ------------------------------------------------ */
+  /* event helpers                                    */
+  /* ------------------------------------------------ */
+
+  const setDir = (dx: number, dy: number) => {
+    if (dx !== 0 && dirRef.current.x !== 0) return; // block 180° turn
+    if (dy !== 0 && dirRef.current.y !== 0) return;
+    dirRef.current = { x: dx, y: dy };
   };
 
-  const togglePause = () => {
-    isPausedRef.current = !isPausedRef.current;
-    setPauseTick((pt) => pt + 1);
-  };
+  /* ------------------------------------------------ */
+  /* effects                                          */
+  /* ------------------------------------------------ */
 
+  // one-time load of stored high score
   useEffect(() => {
-    placeFood();
-    requestAnimationFrame(gameLoop);
+    (async () => {
+      try {
+        const raw = await AsyncStorage.getItem(HIGH_SCORE_KEY);
+        if (raw) {
+          const stored = parseInt(raw, 10);
+          hiScoreRef.current = stored;
+          setHiScore(stored);
+        }
+      } catch (e) {
+        console.log("cannot read high score", e);
+      }
+    })();
   }, []);
 
-  const goHome = () => {
-    setHomeIconColor(mode === "yuck" ? "#08f800" : theme.green);
-    navigation.navigate("MainTabs", { screen: "Home" });
-    setTimeout(
-      () => setHomeIconColor(mode === "yuck" ? "#e3d400" : theme.yellow),
-      200
-    );
+  // restart whenever mode changes
+  useEffect(() => {
+    speedRef.current = gameModes[selectedMode].speed;
+    growthRef.current = gameModes[selectedMode].growthRate;
+    resetGame();
+  }, [selectedMode, resetGame]);
+
+  // handle focus / blur to start and stop loop
+  useFocusEffect(
+    useCallback(() => {
+      lastRenderRef.current = performance.now();
+      frameIdRef.current = requestAnimationFrame(loop);
+
+      return () => {
+        if (frameIdRef.current !== null) {
+          cancelAnimationFrame(frameIdRef.current);
+          frameIdRef.current = null;
+        }
+      };
+    }, [])
+  );
+
+  /* ------------------------------------------------ */
+  /* render helpers                                   */
+  /* ------------------------------------------------ */
+
+  const arrowBtnStyle = {
+    backgroundColor: themeMode === "yuck" ? "#e3d400" : theme.yellow,
+    borderColor: theme.black,
   };
 
-  const handleModeChange = (mode: keyof typeof gameModes) => {
-    setSelectedMode(mode);
-    setIsModeSelectionOpen(false);
-  };
+  const scoreBg = themeMode === "yuck" ? "#2e2b3d" : theme.yuckLight;
 
-  const getScoreBoxBackground = () => {
-    return mode === "yuck" ? "#2e2b3d" : theme.lightGray; // Distinct from offWhite2
-  };
+  /* ------------------------------------------------ */
+  /* render                                           */
+  /* ------------------------------------------------ */
 
   return (
     <View
       style={[
         styles.container,
-        { backgroundColor: mode === "yuck" ? "#5c540b" : theme.offWhite2 },
+        { backgroundColor: themeMode === "yuck" ? "#5c540b" : theme.offWhite2 },
       ]}
     >
       <StatusBar
         barStyle={
-          mode === "offWhite" || mode === "default"
+          themeMode === "offWhite" || themeMode === "default"
             ? "dark-content"
             : "light-content"
         }
-        backgroundColor={mode === "yuck" ? "#5c540b" : theme.offWhite2}
+        backgroundColor={themeMode === "yuck" ? "#5c540b" : theme.offWhite2}
       />
 
+      {/* top bar */}
       <View style={styles.topRow}>
         <TouchableOpacity
-          onPress={goHome}
+          onPress={() => {
+            setHomeClr(themeMode === "yuck" ? "#08f800" : theme.green);
+            nav.dispatch(StackActions.popToTop());
+            nav.navigate("MainTabs", { screen: "Home" });
+            setTimeout(
+              () => setHomeClr(themeMode === "yuck" ? "#e3d400" : theme.yellow),
+              200
+            );
+          }}
           style={styles.homeButton}
-          onPressIn={() =>
-            setHomeIconColor(mode === "yuck" ? "#08f800" : theme.green)
-          }
-          onPressOut={() =>
-            setHomeIconColor(mode === "yuck" ? "#e3d400" : theme.yellow)
-          }
         >
-          <Icon name="home" size={30} color={homeIconColor} />
+          <Icon name="home" size={30} color={homeClr} />
         </TouchableOpacity>
 
         <View style={styles.modeSelectContainer}>
@@ -320,47 +305,48 @@ const Snake: React.FC = () => {
             style={[
               styles.selectModeButton,
               {
-                backgroundColor: mode === "yuck" ? "#e3d400" : theme.yellow,
+                backgroundColor:
+                  themeMode === "yuck" ? "#e3d400" : theme.yellow,
                 borderColor: theme.black,
               },
             ]}
-            onPress={() => setIsModeSelectionOpen(!isModeSelectionOpen)}
+            onPress={() => setPickerOpen((p) => !p)}
           >
             <Text style={styles.selectModeText}>
               {selectedMode.replace("_", " ")}
             </Text>
             <Icon
-              name={isModeSelectionOpen ? "caret-up" : "caret-down"}
+              name={pickerOpen ? "caret-up" : "caret-down"}
               size={20}
               color={theme.black}
-              style={styles.dropdownIcon}
+              style={{ marginLeft: 8 }}
             />
           </TouchableOpacity>
 
-          {isModeSelectionOpen && (
+          {pickerOpen && (
             <View
               style={[
                 styles.modeDropdown,
                 {
-                  backgroundColor: mode === "yuck" ? "#e3d400" : theme.yellow,
+                  backgroundColor:
+                    themeMode === "yuck" ? "#e3d400" : theme.yellow,
                   borderColor: theme.black,
                 },
               ]}
             >
-              {Object.keys(gameModes).map((mode, index) => (
+              {(Object.keys(gameModes) as Mode[]).map((m) => (
                 <TouchableOpacity
-                  key={index}
+                  key={m}
                   style={[
                     styles.modeDropDownItem,
-                    selectedMode === mode ? styles.selectedMode : null,
+                    selectedMode === m && styles.selectedMode,
                   ]}
-                  onPress={() =>
-                    handleModeChange(mode as keyof typeof gameModes)
-                  }
+                  onPress={() => {
+                    setSelectedMode(m);
+                    setPickerOpen(false);
+                  }}
                 >
-                  <Text style={styles.modeItemText}>
-                    {mode.replace("_", " ")}
-                  </Text>
+                  <Text style={styles.modeItemText}>{m.replace("_", " ")}</Text>
                 </TouchableOpacity>
               ))}
             </View>
@@ -368,50 +354,45 @@ const Snake: React.FC = () => {
         </View>
       </View>
 
-      {showGameOver && <GameOverModal />}
-
+      {/* score boxes */}
       <View style={styles.scoreboardContainer}>
-        <View
-          style={[
-            styles.scoreBox,
-            { backgroundColor: mode === "yuck" ? "#2e2b3d" : theme.yuckLight },
-          ]}
-        >
-          <Text style={styles.scoreText}>
-            current score: {scoreRef.current}
-          </Text>
+        <View style={[styles.scoreBox, { backgroundColor: scoreBg }]}>
+          <Text style={styles.scoreText}>current: {scoreRef.current}</Text>
         </View>
-        <View
-          style={[
-            styles.scoreBox,
-            { backgroundColor: mode === "yuck" ? "#2e2b3d" : theme.yuckLight },
-          ]}
-        >
-          <Text style={styles.scoreText}>high score: {highScore}</Text>
+        <View style={[styles.scoreBox, { backgroundColor: scoreBg }]}>
+          <Text style={styles.scoreText}>high: {hiScore}</Text>
         </View>
       </View>
 
-      <TouchableWithoutFeedback onPress={togglePause}>
+      {/* game area */}
+      <TouchableWithoutFeedback
+        onPress={() => {
+          pausedRef.current = !pausedRef.current;
+          setPauseTick((t) => t + 1);
+        }}
+      >
         <View
           style={[
             styles.gameArea,
             {
-              width: gameAreaWidth,
-              height: gameAreaHeight,
-              backgroundColor: mode === "yuck" ? "#9e9b7b" : theme.yuckLight,
-              borderColor: mode === "yuck" ? "#2e2b3d" : theme.offWhite,
+              width: gameW,
+              height: gameH,
+              backgroundColor:
+                themeMode === "yuck" ? "#9e9b7b" : theme.yuckLight,
+              borderColor: themeMode === "yuck" ? "#2e2b3d" : theme.offWhite,
             },
           ]}
         >
-          {snakeRef.current.map((segment, index) => (
+          {snakeRef.current.map((seg, idx) => (
             <View
-              key={index}
+              key={idx}
               style={[
                 styles.snake,
                 {
-                  left: segment.x,
-                  top: segment.y,
-                  backgroundColor: mode === "yuck" ? "#2e2b3d" : theme.offWhite,
+                  left: seg.x,
+                  top: seg.y,
+                  backgroundColor:
+                    themeMode === "yuck" ? "#2e2b3d" : theme.offWhite,
                 },
               ]}
             />
@@ -422,20 +403,22 @@ const Snake: React.FC = () => {
               {
                 left: foodRef.current.x,
                 top: foodRef.current.y,
-                backgroundColor: mode === "yuck" ? "#b6390b" : theme.blood,
+                backgroundColor: themeMode === "yuck" ? "#b6390b" : theme.blood,
               },
             ]}
           />
-          {isPausedRef.current && (
+          {pausedRef.current && (
             <View
+              key={pauseTick}
               style={[
                 styles.pauseOverlay,
                 {
                   backgroundColor:
-                    mode === "yuck" ? "rgb(255, 141, 141)" : theme.orange,
+                    themeMode === "yuck"
+                      ? "rgba(255,141,141,0.8)"
+                      : theme.orange,
                 },
               ]}
-              key={pauseTick}
             >
               <Text style={styles.pauseText}>paused</Text>
               <Text style={styles.pauseSubText}>(tap to unpause)</Text>
@@ -444,70 +427,86 @@ const Snake: React.FC = () => {
         </View>
       </TouchableWithoutFeedback>
 
+      {/* control buttons */}
       <View style={styles.buttonsContainer}>
         <TouchableOpacity
-          onPress={leftArrow}
-          style={[
-            styles.arrowButton,
-            {
-              backgroundColor: mode === "yuck" ? "#e3d400" : theme.yellow,
-              borderColor: theme.black,
-            },
-          ]}
+          onPress={() => setDir(-1, 0)}
+          style={[styles.arrowButton, arrowBtnStyle]}
         >
           <Text style={styles.buttonText}>left</Text>
         </TouchableOpacity>
 
         <View style={styles.verticalButtons}>
           <TouchableOpacity
-            onPress={upArrow}
-            style={[
-              styles.arrowButton,
-              {
-                backgroundColor: mode === "yuck" ? "#e3d400" : theme.yellow,
-                borderColor: theme.black,
-              },
-            ]}
+            onPress={() => setDir(0, -1)}
+            style={[styles.arrowButton, arrowBtnStyle]}
           >
             <Text style={styles.buttonText}>up</Text>
           </TouchableOpacity>
           <TouchableOpacity
-            onPress={downArrow}
-            style={[
-              styles.arrowButton,
-              {
-                backgroundColor: mode === "yuck" ? "#e3d400" : theme.yellow,
-                borderColor: theme.black,
-              },
-            ]}
+            onPress={() => setDir(0, 1)}
+            style={[styles.arrowButton, arrowBtnStyle]}
           >
             <Text style={styles.buttonText}>down</Text>
           </TouchableOpacity>
         </View>
 
         <TouchableOpacity
-          onPress={rightArrow}
-          style={[
-            styles.arrowButton,
-            {
-              backgroundColor: mode === "yuck" ? "#e3d400" : theme.yellow,
-              borderColor: theme.black,
-            },
-          ]}
+          onPress={() => setDir(1, 0)}
+          style={[styles.arrowButton, arrowBtnStyle]}
         >
           <Text style={styles.buttonText}>right</Text>
         </TouchableOpacity>
       </View>
+
+      {/* game over modal */}
+      {showModal && (
+        <View style={styles.gameOverModal}>
+          <View
+            style={[
+              styles.gameOverContent,
+              {
+                backgroundColor:
+                  themeMode === "yuck" ? "#5c540b" : theme.offWhite2,
+                borderColor: themeMode === "yuck" ? "#e3d400" : theme.yellow,
+              },
+            ]}
+          >
+            <Text
+              style={[
+                styles.gameOverTitle,
+                { color: themeMode === "yuck" ? "#e3d400" : theme.yellow },
+              ]}
+            >
+              game over
+            </Text>
+            <Text style={styles.gameOverText}>score: {scoreRef.current}</Text>
+            <TouchableOpacity
+              style={[
+                styles.gameOverButton,
+                {
+                  backgroundColor:
+                    themeMode === "yuck" ? "#e3d400" : theme.yellow,
+                  borderColor: theme.black,
+                },
+              ]}
+              onPress={resetGame}
+            >
+              <Text style={styles.gameOverButtonText}>restart</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      )}
     </View>
   );
 };
 
+/* -------------------------------------------------- */
+/* styles                                             */
+/* -------------------------------------------------- */
+
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    alignItems: "center",
-    justifyContent: "flex-start",
-  },
+  container: { flex: 1, alignItems: "center", justifyContent: "flex-start" },
   topRow: {
     flexDirection: "row",
     width: "90%",
@@ -516,16 +515,8 @@ const styles = StyleSheet.create({
     alignItems: "center",
     zIndex: 1,
   },
-  homeButton: {
-    flex: 1,
-    alignItems: "flex-start",
-    marginLeft: 6,
-  },
-  modeSelectContainer: {
-    flex: 3,
-    marginRight: 4,
-    alignItems: "flex-end",
-  },
+  homeButton: { flex: 1, alignItems: "flex-start", marginLeft: 6 },
+  modeSelectContainer: { flex: 3, marginRight: 4, alignItems: "flex-end" },
   selectModeButton: {
     flexDirection: "row",
     alignItems: "center",
@@ -535,13 +526,7 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
     borderRadius: 5,
   },
-  selectModeText: {
-    color: "#000",
-    fontSize: 18,
-  },
-  dropdownIcon: {
-    marginLeft: 10,
-  },
+  selectModeText: { color: "#000", fontSize: 18 },
   modeDropdown: {
     position: "absolute",
     top: 45,
@@ -558,107 +543,39 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: "#000",
   },
-  modeItemText: {
-    fontSize: 18,
-    color: "#000",
-  },
-  selectedMode: {
-    backgroundColor: "#f0e68c",
-  },
+  modeItemText: { fontSize: 18, color: "#000" },
+  selectedMode: { backgroundColor: "#f0e68c" },
   scoreboardContainer: {
     flexDirection: "row",
     justifyContent: "space-around",
     width: "90%",
     marginVertical: 10,
   },
-  scoreBox: {
-    padding: 10,
-    width: 150,
-    alignItems: "center",
-    borderRadius: 5,
-  },
-  scoreText: {
-    color: "#fff",
-    fontSize: 16,
-  },
+  scoreBox: { padding: 10, width: 150, alignItems: "center", borderRadius: 5 },
+  scoreText: { color: "#fff", fontSize: 16 },
   gameArea: {
     borderWidth: 10,
     position: "relative",
     justifyContent: "center",
     alignItems: "center",
   },
-  snake: {
-    position: "absolute",
-    width: snakeSize,
-    height: snakeSize,
-  },
-  food: {
-    position: "absolute",
-    width: snakeSize,
-    height: snakeSize,
-  },
+  snake: { position: "absolute", width: snakeSize, height: snakeSize },
+  food: { position: "absolute", width: snakeSize, height: snakeSize },
   pauseOverlay: {
     ...StyleSheet.absoluteFillObject,
     justifyContent: "center",
     alignItems: "center",
-    opacity: 1,
   },
-  pauseText: {
-    fontSize: 40,
-    color: "#fff",
-  },
-  pauseSubText: {
-    fontSize: 30,
-    color: "#fff",
-  },
-  gameOverModal: {
-    ...StyleSheet.absoluteFillObject,
-    backgroundColor: "rgba(0,0,0,0.7)",
-    justifyContent: "center",
-    alignItems: "center",
-    zIndex: 99,
-    pointerEvents: "auto",
-  },
-  gameOverContent: {
-    padding: 20,
-    borderRadius: 10,
-    borderWidth: 4,
-    alignItems: "center",
-  },
-  gameOverTitle: {
-    fontSize: 32,
-    fontWeight: "bold",
-    marginBottom: 10,
-    fontFamily: "Arial",
-  },
-  gameOverText: {
-    color: "#fff",
-    fontSize: 24,
-    marginBottom: 20,
-  },
-  gameOverButton: {
-    paddingVertical: 15,
-    paddingHorizontal: 35,
-    borderRadius: 5,
-    borderWidth: 2,
-  },
-  gameOverButtonText: {
-    color: "#000",
-    fontSize: 20,
-    fontWeight: "bold",
-  },
+  pauseText: { fontSize: 40, color: "#fff" },
+  pauseSubText: { fontSize: 30, color: "#fff" },
   buttonsContainer: {
     flexDirection: "row",
-    marginTop: (windowHeight - gameAreaHeight) / 50,
-    width: gameAreaWidth,
+    marginTop: (winH - gameH) / 50,
+    width: gameW,
     justifyContent: "space-between",
-    alignItems: "stretch",
     flexGrow: 1,
   },
-  verticalButtons: {
-    flexDirection: "column",
-    flex: 1.2,
-  },
+  verticalButtons: { flexDirection: "column", flex: 1.2 },
   arrowButton: {
     borderWidth: 2,
     margin: 5,
@@ -667,10 +584,29 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
-  buttonText: {
-    fontSize: 18,
-    color: "#000",
+  buttonText: { fontSize: 18, color: "#000" },
+  gameOverModal: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: "rgba(0,0,0,0.7)",
+    justifyContent: "center",
+    alignItems: "center",
+    zIndex: 99,
   },
+  gameOverContent: {
+    padding: 20,
+    borderRadius: 10,
+    borderWidth: 4,
+    alignItems: "center",
+  },
+  gameOverTitle: { fontSize: 32, fontWeight: "bold", marginBottom: 10 },
+  gameOverText: { color: "#fff", fontSize: 24, marginBottom: 20 },
+  gameOverButton: {
+    paddingVertical: 15,
+    paddingHorizontal: 35,
+    borderRadius: 5,
+    borderWidth: 2,
+  },
+  gameOverButtonText: { color: "#000", fontSize: 20, fontWeight: "bold" },
 });
 
 export default Snake;
