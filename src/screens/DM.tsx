@@ -206,6 +206,56 @@ const DM = () => {
     setPopupVisible(false);
   };
 
+  const handleImportReceipt = async () => {
+    if (!longPressed || !longPressed.receiptData || !longPressed.senderUid)
+      return;
+
+    const receiptName = longPressed.receiptData.name;
+    if (!receiptName) {
+      Alert.alert("Error", "Receipt name not found.");
+      return;
+    }
+
+    const receiptRef = ref(
+      database,
+      `receipts/${longPressed.senderUid}/${receiptName}`
+    );
+    try {
+      const snap = await get(receiptRef);
+      if (snap.exists()) {
+        const raw = snap.val() || {};
+        const receipt: ReceiptData = {
+          name: receiptName,
+          items: Array.isArray(raw.items) ? raw.items : [],
+          buyers: Array.isArray(raw.buyers) ? raw.buyers : [],
+          tax: typeof raw.tax === "number" ? raw.tax : 0,
+          date:
+            typeof raw.time_and_date === "string"
+              ? raw.time_and_date
+              : undefined,
+        };
+        setPopupVisible(false);
+        navigation.reset({
+          index: 0,
+          routes: [
+            {
+              name: "MainTabs",
+              params: {
+                screen: "Split",
+                params: { importedReceipt: receipt },
+              },
+            },
+          ],
+        });
+      } else {
+        Alert.alert("Not found", `Could not locate receipt "${receiptName}".`);
+      }
+    } catch (err) {
+      console.error("Receipt import error:", err);
+      Alert.alert("Error", "Failed to import receipt.");
+    }
+  };
+
   /* -------- render each row -------- */
   const Row = ({ item }: { item: DMMessage }) => {
     const own = item.senderUid === currentUser?.uid;
@@ -391,17 +441,42 @@ const DM = () => {
               },
             ]}
           >
-            <TouchableOpacity onPress={copyMsg} style={styles.popupItem}>
-              <View style={styles.popupRow}>
-                <Icon
-                  name="copy"
-                  size={18}
-                  color="#fff"
-                  style={{ marginRight: 12 }}
-                />
-                <Text style={styles.popupText}>copy</Text>
-              </View>
-            </TouchableOpacity>
+            {/* Copy (if not a receipt message) */}
+            {longPressed?.type !== "receipt" && (
+              <>
+                <TouchableOpacity onPress={copyMsg} style={styles.popupItem}>
+                  <View style={styles.popupRow}>
+                    <Icon
+                      name="copy"
+                      size={18}
+                      color="#fff"
+                      style={{ marginRight: 12 }}
+                    />
+                    <Text style={styles.popupText}>copy</Text>
+                  </View>
+                </TouchableOpacity>
+              </>
+            )}
+
+            {/* Import Receipt (if receipt message) */}
+            {longPressed?.type === "receipt" && (
+              <>
+                <TouchableOpacity
+                  onPress={handleImportReceipt}
+                  style={styles.popupItem}
+                >
+                  <View style={styles.popupRow}>
+                    <Icon
+                      name="download-cloud"
+                      size={18}
+                      color="#fff"
+                      style={{ marginRight: 12 }}
+                    />
+                    <Text style={styles.popupText}>import receipt</Text>
+                  </View>
+                </TouchableOpacity>
+              </>
+            )}
           </Animated.View>
         )}
       </Modal>
@@ -438,7 +513,7 @@ const styles = StyleSheet.create({
 
   /* receipt bubble colours */
   receiptBubble: { backgroundColor: "#194D33" },
-  currentUserReceipt: { alignSelf: "flex-end", backgroundColor: "#194D33"},
+  currentUserReceipt: { alignSelf: "flex-end", backgroundColor: "#194D33" },
   otherUserReceipt: { alignSelf: "flex-start" },
 
   /* receipt bubble text */

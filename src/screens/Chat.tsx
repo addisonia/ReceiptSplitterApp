@@ -14,6 +14,8 @@ import {
   Dimensions,
   Alert,
   Animated,
+  KeyboardAvoidingView, // Added for report modal
+  Platform, // Added for report modal
 } from "react-native";
 import { FontAwesome } from "@expo/vector-icons";
 import { auth, database } from "../firebase";
@@ -26,6 +28,7 @@ import { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import Icon from "react-native-vector-icons/Feather";
 import { useTheme } from "../context/ThemeContext";
 import { colors } from "../components/ColorThemes";
+import * as Clipboard from "expo-clipboard";
 
 // ---- NEW IMPORTS FOR NOTIFICATIONS ----
 import * as Notifications from "expo-notifications";
@@ -160,18 +163,13 @@ function normalizeReceiptData(receiptKey: string, rawData: any): ReceiptData {
   };
 }
 
-// ---- HELPER FUNCTION TO SCHEDULE A LOCAL NOTIFICATION ----
 async function scheduleLocalNotification(messageText: string) {
-  // If the user is in the app, this is just a basic local notification.
-  // If the app is backgrounded or closed, they might not see this immediately.
-  // A real solution usually uses push tokens on a backend to notify others.
-
   await Notifications.scheduleNotificationAsync({
     content: {
       title: "New Group Chat Message",
       body: messageText,
     },
-    trigger: null, // triggers immediately
+    trigger: null,
   });
 }
 
@@ -217,9 +215,20 @@ const Chat = () => {
     null
   );
 
-  const [participantUsernames, setParticipantUsernames] = useState<string[]>([]);
+  const [participantUsernames, setParticipantUsernames] = useState<string[]>(
+    []
+  );
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const [cooldownMessage, setCooldownMessage] = useState<string | null>(null);
+
+  // ---- NEW STATE FOR REPORTING ----
+  const [isReportModalVisible, setIsReportModalVisible] = useState(false);
+  const [reportReason, setReportReason] = useState("");
+  const [reportAdditionalInfo, setReportAdditionalInfo] = useState("");
+  const [reportConfirmation, setReportConfirmation] = useState<string | null>(
+    null
+  );
+  // ---- END NEW STATE FOR REPORTING ----
 
   const userColors = [
     "#c177d9",
@@ -254,7 +263,6 @@ const Chat = () => {
       : "#000";
 
   useEffect(() => {
-    // request notification permissions if you haven't already
     (async () => {
       if (Constants.isDevice) {
         const { status } = await Notifications.requestPermissionsAsync();
@@ -496,10 +504,7 @@ const Chat = () => {
       await set(newMessageRef, messagePayload);
       setNewMessageText("");
       setLastGlobalSendTime(currentTime);
-
-      // (Optional) Fire a local notification for demonstration
       await scheduleLocalNotification("New message in Global Chat");
-
     } else {
       const groupMessagesRef = ref(
         database,
@@ -515,8 +520,6 @@ const Chat = () => {
       await set(newGroupMsgRef, messagePayload);
       setNewMessageText("");
       setLastGroupSendTime(currentTime);
-
-      // (Optional) Fire a local notification for demonstration
       await scheduleLocalNotification(
         `New group message in ${groupChatsMap[selectedChat]?.name ?? "Group"}`
       );
@@ -538,7 +541,7 @@ const Chat = () => {
     pageY: number,
     messageItem: Message
   ) => {
-    if (isCurrentUserMessage || !targetUid || !targetName) return;
+    if (isCurrentUserMessage || !targetUid || !targetName) return; // Cannot report self or if target info is missing
     const friendUids = Object.keys(myFriends);
     setIsTargetFriend(friendUids.includes(targetUid));
     setLongPressedMessage(messageItem);
@@ -547,7 +550,8 @@ const Chat = () => {
 
     const screenHeight = Dimensions.get("window").height;
     const inputAreaHeight = 70;
-    const popupHeight = 150;
+    // Adjust popupHeight if new "Report User" item makes it taller
+    const popupHeight = selectedChat === "global" ? 200 : 150; // Estimate, adjust as needed
 
     const adjustedY = Math.min(
       pageY,
@@ -559,11 +563,11 @@ const Chat = () => {
     setPopupVisible(true);
   };
 
-  const handleCopyMessage = () => {
+  const handleCopyMessage = async () => {
     if (!longPressedMessage) return;
-    navigator.clipboard
-      ? navigator.clipboard.writeText(longPressedMessage.text || "")
-      : console.warn("Clipboard API not available");
+    await Clipboard.setStringAsync(longPressedMessage.text || "");
+    console.log("Attempting to copy:", longPressedMessage.text);
+    Alert.alert("Copied", "Message content copied to clipboard.");
     setPopupVisible(false);
   };
 
@@ -586,7 +590,10 @@ const Chat = () => {
       fromUid: myUid,
       fromUsername: localName,
     });
-    await set(ref(database, `outgoingRequests/${myUid}/${popupTargetUid}`), true);
+    await set(
+      ref(database, `outgoingRequests/${myUid}/${popupTargetUid}`),
+      true
+    );
     setPopupVisible(false);
     Alert.alert("Friend request sent", `Sent to ${popupTargetName}.`);
   };
@@ -640,7 +647,10 @@ const Chat = () => {
         onPress: async () => {
           try {
             await remove(
-              ref(database, `groupChats/${selectedChat}/participants/${user.uid}`)
+              ref(
+                database,
+                `groupChats/${selectedChat}/participants/${user.uid}`
+              )
             );
             await remove(
               ref(database, `users/${user.uid}/groups/${selectedChat}`)
@@ -716,6 +726,71 @@ const Chat = () => {
       Alert.alert("Error", "Failed to import receipt. Please try again.");
     }
   };
+
+  // ---- NEW FUNCTIONS FOR REPORTING ----
+  const handleOpenReportModal = () => {
+    if (!popupTargetUid || !popupTargetName || !longPressedMessage) {
+      Alert.alert("Error", "Cannot report user. Information missing.");
+      return;
+    }
+    setPopupVisible(false); // Close the long-press menu
+    setIsReportModalVisible(true);
+  };
+
+  const handleCloseReportModal = () => {
+    setIsReportModalVisible(false);
+    setReportReason("");
+    setReportAdditionalInfo("");
+  };
+
+  const handleSubmitReport = async () => {
+    if (
+      !user ||
+      !username ||
+      !popupTargetUid ||
+      !popupTargetName ||
+      !longPressedMessage
+    ) {
+      Alert.alert("Error", "Could not submit report. Missing information.");
+      handleCloseReportModal();
+      return;
+    }
+
+    if (!reportReason.trim()) {
+      Alert.alert("Reason Required", "Please provide a reason for the report.");
+      return;
+    }
+
+    const reportData = {
+      reportedUid: popupTargetUid,
+      reportedUsername: popupTargetName,
+      reporterUid: user.uid,
+      reporterUsername: username,
+      reason: reportReason.trim(),
+      additionalInfo: reportAdditionalInfo.trim(),
+      timestamp: Date.now(),
+      messageId: longPressedMessage.key,
+      messageText: longPressedMessage.text, // Good to have context
+      chatType: selectedChat === "global" ? "global" : "group",
+      chatId: selectedChat, // This will be 'global' or the groupId
+    };
+
+    try {
+      const reportsRef = ref(database, "userReports");
+      const newReportRef = push(reportsRef);
+      await set(newReportRef, reportData);
+
+      setReportConfirmation("Report sent successfully.");
+      setTimeout(() => setReportConfirmation(null), 3000); // Hide after 3 seconds
+      handleCloseReportModal();
+    } catch (error) {
+      console.error("Error submitting report:", error);
+      Alert.alert("Error", "Failed to submit report. Please try again.");
+      setReportConfirmation("Failed to send report.");
+      setTimeout(() => setReportConfirmation(null), 3000);
+    }
+  };
+  // ---- END NEW FUNCTIONS FOR REPORTING ----
 
   const currentChatName =
     selectedChat === "global"
@@ -936,7 +1011,6 @@ const Chat = () => {
         </TouchableOpacity>
       </View>
 
-      {/* Participant list (only when in a group) */}
       {selectedChat !== "global" && participantUsernames.length > 0 && (
         <View style={styles.participantList}>
           <Text style={styles.participantText}>
@@ -945,7 +1019,6 @@ const Chat = () => {
         </View>
       )}
 
-      {/* One FlatList with scroll-to-end */}
       <FlatList
         ref={flatListRef}
         data={messages}
@@ -956,7 +1029,8 @@ const Chat = () => {
           const { contentOffset, layoutMeasurement, contentSize } =
             e.nativeEvent;
           const closeToBottom =
-            contentOffset.y + layoutMeasurement.height >= contentSize.height - 50;
+            contentOffset.y + layoutMeasurement.height >=
+            contentSize.height - 50;
           setShowScrollDown(!closeToBottom);
         }}
         scrollEventThrottle={200}
@@ -977,14 +1051,15 @@ const Chat = () => {
         </TouchableOpacity>
       )}
 
-      {/* Cooldown popup */}
-      {cooldownMessage && (
+      {/* Cooldown or Report Confirmation popup */}
+      {(cooldownMessage || reportConfirmation) && ( // Modified to show either
         <View style={styles.cooldownPopup}>
-          <Text style={styles.cooldownText}>{cooldownMessage}</Text>
+          <Text style={styles.cooldownText}>
+            {cooldownMessage || reportConfirmation}
+          </Text>
         </View>
       )}
 
-      {/* Input area */}
       <View style={styles.inputArea}>
         {selectedChat !== "global" && (
           <TouchableOpacity
@@ -1008,7 +1083,7 @@ const Chat = () => {
         </Pressable>
       </View>
 
-      {/* Popup modal */}
+      {/* Popup modal for message actions */}
       <Modal visible={popupVisible} transparent animationType="fade">
         <TouchableWithoutFeedback onPress={() => setPopupVisible(false)}>
           <View style={styles.modalOverlay} />
@@ -1019,27 +1094,30 @@ const Chat = () => {
               styles.popupContainer,
               {
                 top: popupY,
-                left: Math.min(popupX, Dimensions.get("window").width - 180),
+                left: Math.min(popupX, Dimensions.get("window").width - 180), // ensure it stays on screen
               },
             ]}
           >
-            {/* You can add items here for "Copy", "Add Friend", etc. */}
-            <TouchableOpacity
-              onPress={handleCopyMessage}
-              style={styles.popupItem}
-            >
-              <View style={styles.popupItemContent}>
-                <Icon
-                  name="copy"
-                  size={18}
-                  color="#fff"
-                  style={styles.popupIcon}
-                />
-                <Text style={styles.popupText}>Copy</Text>
-              </View>
-            </TouchableOpacity>
+            {longPressedMessage?.type !== "receipt" && (
+              <>
+                <TouchableOpacity
+                  onPress={handleCopyMessage}
+                  style={styles.popupItem}
+                >
+                  <View style={styles.popupItemContent}>
+                    <Icon
+                      name="copy"
+                      size={18}
+                      color="#fff"
+                      style={styles.popupIcon}
+                    />
+                    <Text style={styles.popupText}>Copy</Text>
+                  </View>
+                </TouchableOpacity>
 
-            <View style={styles.popupDivider} />
+                <View style={styles.popupDivider} />
+              </>
+            )}
 
             {!isTargetFriend ? (
               <TouchableOpacity
@@ -1087,6 +1165,32 @@ const Chat = () => {
               </View>
             </TouchableOpacity>
 
+            {/* ---- NEW REPORT USER BUTTON ---- */}
+            {selectedChat === "global" &&
+              popupTargetUid &&
+              popupTargetUid !== user?.uid && ( // Only show for global chat and not self
+                <>
+                  <View style={styles.popupDivider} />
+                  <TouchableOpacity
+                    onPress={handleOpenReportModal}
+                    style={styles.popupItem}
+                  >
+                    <View style={styles.popupItemContent}>
+                      <Icon
+                        name="alert-triangle" // Example icon
+                        size={18}
+                        color={"red"} // Make it stand out
+                        style={styles.popupIcon}
+                      />
+                      <Text style={[styles.popupText, { color: "red" }]}>
+                        Report User
+                      </Text>
+                    </View>
+                  </TouchableOpacity>
+                </>
+              )}
+            {/* ---- END NEW REPORT USER BUTTON ---- */}
+
             {longPressedMessage?.type === "receipt" && (
               <>
                 <View style={styles.popupDivider} />
@@ -1110,7 +1214,70 @@ const Chat = () => {
         )}
       </Modal>
 
-      {/* Dropdown for switching chats */}
+      {/* ---- NEW REPORT MODAL ---- */}
+      <Modal
+        visible={isReportModalVisible}
+        transparent
+        animationType="slide"
+        onRequestClose={handleCloseReportModal}
+      >
+        <KeyboardAvoidingView
+          behavior={Platform.OS === "ios" ? "padding" : "height"}
+          style={styles.reportModalKeyboardAvoidingView}
+        >
+          <TouchableWithoutFeedback onPress={handleCloseReportModal}>
+            <View style={styles.modalOverlay} />
+          </TouchableWithoutFeedback>
+
+          <View style={styles.reportModalContainer}>
+            <Text style={styles.reportModalTitle}>
+              Report {popupTargetName || "User"}
+            </Text>
+
+            <Text style={styles.reportInputLabel}>
+              Why are you reporting this player?
+            </Text>
+            <TextInput
+              style={styles.reportInput}
+              placeholder="e.g., Spamming, Harassment, etc."
+              placeholderTextColor="#999"
+              value={reportReason}
+              onChangeText={setReportReason}
+              multiline
+            />
+
+            <Text style={styles.reportInputLabel}>
+              Additional Information (optional):
+            </Text>
+            <TextInput
+              style={[styles.reportInput, styles.reportInputMulti]}
+              placeholder="Provide any extra details or context."
+              placeholderTextColor="#999"
+              value={reportAdditionalInfo}
+              onChangeText={setReportAdditionalInfo}
+              multiline
+              numberOfLines={4}
+            />
+
+            <View style={styles.reportActionsContainer}>
+              <TouchableOpacity
+                style={[styles.reportButton, styles.reportCancelButton]}
+                onPress={handleCloseReportModal}
+              >
+                <Text style={styles.reportButtonText}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.reportButton, styles.reportSubmitButton]}
+                onPress={handleSubmitReport}
+              >
+                <Text style={styles.reportButtonText}>Submit Report</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </KeyboardAvoidingView>
+      </Modal>
+      {/* ---- END NEW REPORT MODAL ---- */}
+
       <Modal
         transparent
         visible={dropdownOpen}
@@ -1259,19 +1426,23 @@ const styles = StyleSheet.create({
     color: "#333",
   },
   cooldownPopup: {
+    // Also used for report confirmation
     position: "absolute",
-    bottom: 70,
+    bottom: 70, // Adjust if it overlaps with input area
     left: 10,
     right: 10,
-    backgroundColor: "rgba(128, 128, 128, 0.9)",
-    padding: 10,
+    backgroundColor: "rgba(0, 0, 0, 0.85)",
+    padding: 12,
     borderRadius: 8,
     alignItems: "center",
+    zIndex: 1000, // Ensure it's above other elements
   },
   cooldownText: {
+    // Also used for report confirmation
     color: "white",
     fontSize: 14,
     fontWeight: "bold",
+    textAlign: "center",
   },
   inputArea: {
     flexDirection: "row",
@@ -1308,7 +1479,7 @@ const styles = StyleSheet.create({
   },
   dropdownPanel: {
     position: "absolute",
-    top: 70,
+    top: 70, // Adjust based on header height
     left: 0,
     right: 0,
     alignItems: "center",
@@ -1365,7 +1536,7 @@ const styles = StyleSheet.create({
   },
   popupContainer: {
     position: "absolute",
-    width: 180,
+    width: 180, // May need to adjust if "Report User" makes it wider or taller
     backgroundColor: "#1E2A38",
     borderRadius: 12,
     padding: 6,
@@ -1439,4 +1610,73 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: "#ccc",
   },
+  // ---- NEW STYLES FOR REPORT MODAL ----
+  reportModalKeyboardAvoidingView: {
+    flex: 1,
+    justifyContent: "flex-end", // Pushes modal to bottom, adjust if needed
+  },
+  reportModalContainer: {
+    backgroundColor: "#1E2A38", // Dark theme for modal
+    padding: 20,
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: -2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 4,
+    elevation: 5,
+  },
+  reportModalTitle: {
+    fontSize: 20,
+    fontWeight: "bold",
+    color: "#fff",
+    marginBottom: 15,
+    textAlign: "center",
+  },
+  reportInputLabel: {
+    fontSize: 14,
+    color: "#ccc",
+    marginBottom: 5,
+    marginTop: 10,
+  },
+  reportInput: {
+    backgroundColor: "#2a3b4c",
+    color: "#fff",
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    fontSize: 16,
+    minHeight: 50,
+    textAlignVertical: "top", // For multiline
+    borderColor: "#455a64",
+    borderWidth: 1,
+    marginBottom: 15,
+  },
+  reportInputMulti: {
+    minHeight: 100,
+  },
+  reportActionsContainer: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    marginTop: 20,
+  },
+  reportButton: {
+    flex: 1,
+    paddingVertical: 12,
+    borderRadius: 8,
+    alignItems: "center",
+    marginHorizontal: 5,
+  },
+  reportCancelButton: {
+    backgroundColor: "#4F5D75", // A muted color
+  },
+  reportSubmitButton: {
+    backgroundColor: "red", // Use a prominent color like your theme's red or yellow
+  },
+  reportButtonText: {
+    color: "#fff",
+    fontSize: 16,
+    fontWeight: "bold",
+  },
+  // ---- END NEW STYLES FOR REPORT MODAL ----
 });
