@@ -31,3 +31,4 @@ required installations to run code:
 - npx expo install expo-auth-session expo-web-browser expo-random
 - npm install --save-dev babel-plugin-dotenv
 - npx expo install expo-notifications
+- npx expo install expo-clipboard
