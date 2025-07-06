@@ -53,7 +53,7 @@ const htmlContent = `
    <h1>PRIVACY POLICY</h1>
    <p>Last updated March 03, 2025</p>
 
-   <p>This Privacy Notice for __________ ("we," "us," or "our"), describes how and why we might access, collect, store, use, and/or share ("process") your personal information when you use our services ("Services"), including when you:</p>
+   <p>This Privacy Notice for Receipt Splitter App ("we," "us," or "our"), describes how and why we might access, collect, store, use, and/or share ("process") your personal information when you use our services ("Services"), including when you:</p>
    <ul>
     <li>Visit our website at receiptsplitter.org, or any website of ours that links to this Privacy Notice</li>
     <li>Download and use our mobile application (Receipt Splitter), or any other application of ours that links to this Privacy Notice</li>
@@ -146,7 +146,7 @@ const htmlContent = `
     <li>To deliver targeted advertising to you. We may process your information to develop and display personalized content and advertising tailored to your interests, location, and more.</li>
     <li>To protect our Services. We may process your information as part of our efforts to keep our Services safe and secure, including fraud monitoring and prevention.</li>
     <li>To identify usage trends. We may process information about how you use our Services to better understand how they are being used so we can improve them.</li>
-    <li>To save or protect an individual's vital interest. We may process your information when necessary to save or protect an individual’s vital interest, such as to prevent harm.</li>
+    <li>To save or protect an individual's vital interest. We may process your information when necessary to save or protect an individual's vital interest, such as to prevent harm.</li>
    </ul>
 
    <h2>3. WHAT LEGAL BASES DO WE RELY ON TO PROCESS YOUR PERSONAL INFORMATION?</h2>
@@ -275,7 +275,7 @@ const htmlContent = `
       <tr>
         <td>A. Identifiers</td>
         <td>Contact details, such as real name, alias, postal address, telephone or mobile contact number, unique personal identifier, online identifier, Internet Protocol address, email address, and account name</td>
-        <td>NO</td>
+        <td>YES</td>
       </tr>
       <tr>
         <td>B. Personal information as defined in the California Customer Records statute</td>
@@ -360,7 +360,7 @@ const htmlContent = `
   <p>We may disclose your personal information with our service providers pursuant to a written contract between us and each service provider. Learn more about how we disclose personal information in the section, "WHEN AND WITH WHOM DO WE SHARE YOUR PERSONAL INFORMATION?"</p>
   <p>We may use your personal information for our own business purposes, such as for undertaking internal research for technological development and demonstration. This is not considered to be "selling" of your personal information.</p>
   <p>We have not sold or shared any personal information to third parties for a business or commercial purpose in the preceding twelve (12) months. We have disclosed the following categories of personal information to third parties for a business or commercial purpose in the preceding twelve (12) months:</p>
-  <!-- Note: This section is intentionally empty as per the user's provided text -->
+  <p>None.</p>
   <p>The categories of third parties to whom we disclosed personal information for a business or commercial purpose can be found under "WHEN AND WITH WHOM DO WE SHARE YOUR PERSONAL INFORMATION?"</p>
 
   <p><strong>Your Rights</strong></p>
@@ -405,7 +405,7 @@ const htmlContent = `
   <p>If you have questions or comments about this notice, you may email us at officialreceiptsplitter@gmail.com</p>
 
   <h2>18. HOW CAN YOU REVIEW, UPDATE, OR DELETE THE DATA WE COLLECT FROM YOU?</h2>
-  <p>Based on the applicable laws of your country or state of residence in the US, you may have the right to request access to the personal information we collect from you, details about how we have processed it, correct inaccuracies, or delete your personal information. You may also have the right to withdraw your consent to our processing of your personal information. These rights may be limited in some circumstances by applicable law. To request to review, update, or delete your personal information, please fill out and submit a data subject access request.</p>
+  <p>Based on the applicable laws of your country or state of residence in the US, you may have the right to request access to the personal information we collect from you, details about how we have processed it, correct inaccuracies, or delete your personal information. You may also have the right to withdraw your consent to our processing of your personal information. These rights may be limited in some circumstances by applicable law. To request to review, update, or delete your personal information, please email us with details.</p>
   </body>
   </html>
 `;
