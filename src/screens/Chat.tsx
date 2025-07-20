@@ -1,6 +1,11 @@
 // src/screens/Chat.tsx
-import React, { useState, useEffect, useRef, memo, useCallback } // Added memo and useCallback
-from "react";
+import React, {
+  useState,
+  useEffect,
+  useRef,
+  memo,
+  useCallback, // Added memo and useCallback
+} from "react";
 import {
   View,
   Text,
@@ -229,10 +234,26 @@ const Chat = () => {
   );
 
   const userColors = [
-    "#c177d9", "#77d997", "#d97777", "#d9d177", "#77b7d9",
-    "#a477d9", "#d9a477", "#9afbfc", "#ff9a76", "#baff66",
-    "#ff66dc", "#66ffed", "#ffee66", "#ff6666", "#66c7ff",
-    "#d966ff", "#ffb266", "#66ff8c", "#ff66a3", "#c4ff66",
+    "#c177d9",
+    "#77d997",
+    "#d97777",
+    "#d9d177",
+    "#77b7d9",
+    "#a477d9",
+    "#d9a477",
+    "#9afbfc",
+    "#ff9a76",
+    "#baff66",
+    "#ff66dc",
+    "#66ffed",
+    "#ffee66",
+    "#ff6666",
+    "#66c7ff",
+    "#d966ff",
+    "#ffb266",
+    "#66ff8c",
+    "#ff66a3",
+    "#c4ff66",
   ];
 
   const [assignedColors, setAssignedColors] = useState<{
@@ -294,68 +315,80 @@ const Chat = () => {
 
   const fetchChatUsernameFromDB = (uid: string) => {
     const usernameRef = ref(database, `users/${uid}/username`);
-    onValue(usernameRef, (snapshot) => {
-      const dbUsername = snapshot.val();
-      if (dbUsername) {
-        setUsername(dbUsername);
-      } else {
-        setUsername("Loading..."); // Or handle as anonymous/guest if no username
+    onValue(
+      usernameRef,
+      (snapshot) => {
+        const dbUsername = snapshot.val();
+        if (dbUsername) {
+          setUsername(dbUsername);
+        } else {
+          setUsername("Loading..."); // Or handle as anonymous/guest if no username
+        }
+      },
+      (error) => {
+        console.error("Error fetching username:", error);
+        setUsername("Error");
       }
-    }, (error) => {
-      console.error("Error fetching username:", error);
-      setUsername("Error");
-    });
+    );
   };
 
   const loadUserGroups = (uid: string) => {
     const userGroupsRef = ref(database, `users/${uid}/groups`);
-    onValue(userGroupsRef, (snapshot) => {
-      const groupIdsObj = snapshot.val() || {};
-      const groupIds = Object.keys(groupIdsObj);
-      const newMap: Record<string, GroupChatData> = {};
-      let groupsProcessed = 0;
+    onValue(
+      userGroupsRef,
+      (snapshot) => {
+        const groupIdsObj = snapshot.val() || {};
+        const groupIds = Object.keys(groupIdsObj);
+        const newMap: Record<string, GroupChatData> = {};
+        let groupsProcessed = 0;
 
-      if (groupIds.length === 0) {
-        setGroupChatsMap({});
-        setGroupChatArray([]);
-        return;
+        if (groupIds.length === 0) {
+          setGroupChatsMap({});
+          setGroupChatArray([]);
+          return;
+        }
+
+        groupIds.forEach((gid) => {
+          const singleGroupRef = ref(database, `groupChats/${gid}`);
+          // Use get() for one-time fetch or ensure onValue detaches properly
+          onValue(
+            singleGroupRef,
+            (snap) => {
+              if (snap.exists()) {
+                const val = snap.val();
+                const groupData: GroupChatData = {
+                  id: gid,
+                  name: val.name,
+                  creator: val.creator,
+                  participants: val.participants || {},
+                };
+                newMap[gid] = groupData;
+              }
+              groupsProcessed++;
+              if (groupsProcessed === groupIds.length) {
+                // This logic ensures we update state only after all groups are processed
+                // It's a bit complex with nested onValue, consider simplifying if possible
+                setGroupChatsMap((prevMap) => {
+                  const merged = { ...prevMap, ...newMap };
+                  // Clean up groups that the user is no longer part of
+                  Object.keys(merged).forEach((key) => {
+                    if (!groupIds.includes(key)) {
+                      delete merged[key];
+                    }
+                  });
+                  setGroupChatArray(Object.values(merged));
+                  return merged;
+                });
+              }
+            },
+            { onlyOnce: true }
+          ); // Fetch group details once or manage listeners carefully
+        });
+      },
+      (error) => {
+        console.error("Error loading user groups:", error);
       }
-
-      groupIds.forEach((gid) => {
-        const singleGroupRef = ref(database, `groupChats/${gid}`);
-        // Use get() for one-time fetch or ensure onValue detaches properly
-        onValue(singleGroupRef, (snap) => {
-          if (snap.exists()) {
-            const val = snap.val();
-            const groupData: GroupChatData = {
-              id: gid,
-              name: val.name,
-              creator: val.creator,
-              participants: val.participants || {},
-            };
-            newMap[gid] = groupData;
-          }
-          groupsProcessed++;
-          if (groupsProcessed === groupIds.length) {
-            // This logic ensures we update state only after all groups are processed
-            // It's a bit complex with nested onValue, consider simplifying if possible
-            setGroupChatsMap((prevMap) => {
-              const merged = { ...prevMap, ...newMap };
-              // Clean up groups that the user is no longer part of
-              Object.keys(merged).forEach(key => {
-                if (!groupIds.includes(key)) {
-                  delete merged[key];
-                }
-              });
-              setGroupChatArray(Object.values(merged));
-              return merged;
-            });
-          }
-        }, { onlyOnce: true }); // Fetch group details once or manage listeners carefully
-      });
-    }, (error) => {
-      console.error("Error loading user groups:", error);
-    });
+    );
   };
 
   useEffect(() => {
@@ -363,73 +396,76 @@ const Chat = () => {
       setMessages([]); // Clear messages if not signed in
       return;
     }
-    
+
     let messagesRefPath: string;
     if (selectedChat === "global") {
       // OPTIMIZATION: If global chat messages are under a single flat node, adjust this path.
       // Example: messagesRefPath = "global_chat_messages";
       // For now, assuming the existing structure:
-      messagesRefPath = "chat/messages"; 
+      messagesRefPath = "chat/messages";
     } else {
       messagesRefPath = `groupChats/${selectedChat}/messages`;
     }
 
     const currentMessagesRef = ref(database, messagesRefPath);
-    const unsubscribe = onValue(currentMessagesRef, (snapshot) => {
-      const data = snapshot.val();
-      const messagesArray: Message[] = [];
+    const unsubscribe = onValue(
+      currentMessagesRef,
+      (snapshot) => {
+        const data = snapshot.val();
+        const messagesArray: Message[] = [];
 
-      if (data) {
-        if (selectedChat === "global") {
-          // Original global chat processing
-          Object.entries(data).forEach(([_, userMessages]) => {
-            if (typeof userMessages === "object" && userMessages !== null) {
-              Object.entries(userMessages).forEach(([msgId, raw]) => {
-                const msgData = raw as FirebaseMessageData;
-                messagesArray.push({
-                  key: msgId,
-                  senderName: msgData.senderName ?? "",
-                  text: msgData.text ?? "",
-                  timestamp: msgData.timestamp ?? 0,
-                  senderUid: msgData.senderUid,
-                  type: msgData.type ?? "text",
-                  receiptData: msgData.receiptData,
+        if (data) {
+          if (selectedChat === "global") {
+            // Original global chat processing
+            Object.entries(data).forEach(([_, userMessages]) => {
+              if (typeof userMessages === "object" && userMessages !== null) {
+                Object.entries(userMessages).forEach(([msgId, raw]) => {
+                  const msgData = raw as FirebaseMessageData;
+                  messagesArray.push({
+                    key: msgId,
+                    senderName: msgData.senderName ?? "",
+                    text: msgData.text ?? "",
+                    timestamp: msgData.timestamp ?? 0,
+                    senderUid: msgData.senderUid,
+                    type: msgData.type ?? "text",
+                    receiptData: msgData.receiptData,
+                  });
                 });
-              });
-            }
-          });
-        } else {
-          // Group chat processing (already flat)
-          Object.entries(data).forEach(([msgId, raw]) => {
-            const msgData = raw as FirebaseMessageData;
-            messagesArray.push({
-              key: msgId,
-              senderName: msgData.senderName ?? "",
-              text: msgData.text ?? "",
-              timestamp: msgData.timestamp ?? 0,
-              senderUid: msgData.senderUid,
-              type: msgData.type ?? "text",
-              receiptData: msgData.receiptData,
+              }
             });
-          });
+          } else {
+            // Group chat processing (already flat)
+            Object.entries(data).forEach(([msgId, raw]) => {
+              const msgData = raw as FirebaseMessageData;
+              messagesArray.push({
+                key: msgId,
+                senderName: msgData.senderName ?? "",
+                text: msgData.text ?? "",
+                timestamp: msgData.timestamp ?? 0,
+                senderUid: msgData.senderUid,
+                type: msgData.type ?? "text",
+                receiptData: msgData.receiptData,
+              });
+            });
+          }
+          messagesArray.sort((a, b) => a.timestamp - b.timestamp);
+          setMessages(messagesArray);
+        } else {
+          setMessages([]);
         }
-        messagesArray.sort((a, b) => a.timestamp - b.timestamp);
-        setMessages(messagesArray);
-      } else {
+        setInitialLoad(false); // Moved here to ensure it's set after first data load or no data
+      },
+      (error) => {
+        console.error(`Error fetching messages for ${selectedChat}:`, error);
         setMessages([]);
+        setInitialLoad(false);
       }
-      setInitialLoad(false); // Moved here to ensure it's set after first data load or no data
-    }, (error) => {
-      console.error(`Error fetching messages for ${selectedChat}:`, error);
-      setMessages([]);
-      setInitialLoad(false);
-    });
+    );
 
     return () => {
       if (unsubscribe) unsubscribe();
     };
   }, [isSignedIn, selectedChat]);
-
 
   useEffect(() => {
     if (selectedChat === "global") {
@@ -452,7 +488,7 @@ const Chat = () => {
       }
     });
     Promise.all(promises).then((names) => {
-      setParticipantUsernames(names.filter(name => name !== "Error"));
+      setParticipantUsernames(names.filter((name) => name !== "Error"));
     });
   }, [selectedChat, groupChatsMap]);
 
@@ -469,7 +505,7 @@ const Chat = () => {
     });
     // Only update if there's an actual change to prevent unnecessary re-renders
     if (JSON.stringify(newAssignedColors) !== JSON.stringify(assignedColors)) {
-        setAssignedColors(newAssignedColors);
+      setAssignedColors(newAssignedColors);
     }
   }, [messages]); // Removed assignedColors and userColors from deps as they don't need to trigger this effect directly.
 
@@ -503,7 +539,7 @@ const Chat = () => {
       setTimeout(() => setCooldownMessage(null), 2000);
       return;
     }
-    
+
     const messagePayload = {
       text: newMessageText.trim(),
       senderName: username,
@@ -517,11 +553,13 @@ const Chat = () => {
         // IMPORTANT: For global chat, if you change to a flat structure like 'global_chat_messages',
         // this path needs to change. E.g., ref(database, 'global_chat_messages')
         // The current structure `chat/messages/${username}` stores messages under the sender's username in global.
-        const messagesRef = ref(database, `chat/messages/${username}`); 
+        const messagesRef = ref(database, `chat/messages/${username}`);
         const newMessageRef = push(messagesRef);
         await set(newMessageRef, messagePayload);
         setLastGlobalSendTime(currentTime);
-        await scheduleLocalNotification(`New message in Global Chat from ${username}`);
+        await scheduleLocalNotification(
+          `New message in Global Chat from ${username}`
+        );
       } else {
         const groupMessagesRef = ref(
           database,
@@ -531,7 +569,9 @@ const Chat = () => {
         await set(newGroupMsgRef, messagePayload);
         setLastGroupSendTime(currentTime);
         await scheduleLocalNotification(
-          `New group message in ${groupChatsMap[selectedChat]?.name ?? "Group"} from ${username}`
+          `New group message in ${
+            groupChatsMap[selectedChat]?.name ?? "Group"
+          } from ${username}`
         );
       }
       setNewMessageText("");
@@ -550,34 +590,42 @@ const Chat = () => {
   }, []); // setExpandedMessages has a stable identity
 
   // OPTIMIZATION: Wrap handleBubbleLongPress in useCallback
-  const handleBubbleLongPress = useCallback((
-    isCurrentUserMessage: boolean,
-    targetUid: string | undefined,
-    targetName: string | undefined,
-    pageX: number,
-    pageY: number,
-    messageItem: Message
-  ) => {
-    if (isCurrentUserMessage || !targetUid || !targetName) return;
-    const friendUids = Object.keys(myFriends);
-    setIsTargetFriend(friendUids.includes(targetUid));
-    setLongPressedMessage(messageItem);
-    setPopupTargetUid(targetUid);
-    setPopupTargetName(targetName);
+  const handleBubbleLongPress = useCallback(
+    (
+      isCurrentUserMessage: boolean,
+      targetUid: string | undefined,
+      targetName: string | undefined,
+      pageX: number,
+      pageY: number,
+      messageItem: Message
+    ) => {
+      if (isCurrentUserMessage || !targetUid || !targetName) return;
+      const friendUids = Object.keys(myFriends);
+      setIsTargetFriend(friendUids.includes(targetUid));
+      setLongPressedMessage(messageItem);
+      setPopupTargetUid(targetUid);
+      setPopupTargetName(targetName);
 
-    const screenHeight = Dimensions.get("window").height;
-    const inputAreaHeight = 70; 
-    const popupHeight = selectedChat === "global" ? 200 : (messageItem.type === "receipt" ? 150 : 200) ; // Adjusted for receipt popup
+      const screenHeight = Dimensions.get("window").height;
+      const inputAreaHeight = 70;
+      const popupHeight =
+        selectedChat === "global"
+          ? 200
+          : messageItem.type === "receipt"
+          ? 150
+          : 200; // Adjusted for receipt popup
 
-    const adjustedY = Math.min(
-      pageY,
-      screenHeight - inputAreaHeight - popupHeight - 10 
-    );
+      const adjustedY = Math.min(
+        pageY,
+        screenHeight - inputAreaHeight - popupHeight - 10
+      );
 
-    setPopupX(pageX);
-    setPopupY(adjustedY);
-    setPopupVisible(true);
-  }, [myFriends, selectedChat]); // Dependencies for useCallback
+      setPopupX(pageX);
+      setPopupY(adjustedY);
+      setPopupVisible(true);
+    },
+    [myFriends, selectedChat]
+  ); // Dependencies for useCallback
 
   const handleCopyMessage = async () => {
     if (!longPressedMessage) return;
@@ -591,9 +639,12 @@ const Chat = () => {
   };
 
   const handleAddFriend = async () => {
-    if (!popupTargetUid || !user || !username ) return;
+    if (!popupTargetUid || !user || !username) return;
     if (outgoingRequests.has(popupTargetUid)) {
-      Alert.alert("Request Pending",`Waiting on response from ${popupTargetName || 'user'}.`);
+      Alert.alert(
+        "Request Pending",
+        `Waiting on response from ${popupTargetName || "user"}.`
+      );
       setPopupVisible(false);
       return;
     }
@@ -615,10 +666,13 @@ const Chat = () => {
         true
       );
       setPopupVisible(false);
-      Alert.alert("Friend request sent", `Sent to ${popupTargetName || 'user'}.`);
+      Alert.alert(
+        "Friend request sent",
+        `Sent to ${popupTargetName || "user"}.`
+      );
     } catch (error) {
-        console.error("Error sending friend request:", error);
-        Alert.alert("Error", "Could not send friend request.");
+      console.error("Error sending friend request:", error);
+      Alert.alert("Error", "Could not send friend request.");
     }
   };
 
@@ -651,10 +705,13 @@ const Chat = () => {
       await remove(ref(database, `users/${friendUid}/friends/${myUid}`));
       await remove(ref(database, `outgoingRequests/${myUid}/${friendUid}`));
       await remove(ref(database, `outgoingRequests/${friendUid}/${myUid}`));
-      Alert.alert("Friend Removed", `${popupTargetName || 'User'} has been removed from your friends.`);
+      Alert.alert(
+        "Friend Removed",
+        `${popupTargetName || "User"} has been removed from your friends.`
+      );
     } catch (error) {
-        console.error("Error removing friend:", error);
-        Alert.alert("Error", "Could not remove friend.");
+      console.error("Error removing friend:", error);
+      Alert.alert("Error", "Could not remove friend.");
     }
   };
 
@@ -669,31 +726,42 @@ const Chat = () => {
 
   const handleLeaveGroup = () => {
     if (!user || selectedChat === "global") return;
-    Alert.alert("Leave Group", `Are you sure you want to leave ${groupChatsMap[selectedChat]?.name || 'this group'}?`, [
-      { text: "Cancel", style: "cancel" },
-      {
-        text: "Yes",
-        style: "destructive",
-        onPress: async () => {
-          try {
-            await remove(
-              ref(
-                database,
-                `groupChats/${selectedChat}/participants/${user.uid}`
-              )
-            );
-            await remove(
-              ref(database, `users/${user.uid}/groups/${selectedChat}`)
-            );
-            Alert.alert("Group Left", `You have left ${groupChatsMap[selectedChat]?.name || 'the group'}.`);
-            setSelectedChat("global"); // Switch to global chat
-          } catch (err) {
-            console.error("Error leaving group:", err);
-            Alert.alert("Error", "Could not leave group.");
-          }
+    Alert.alert(
+      "Leave Group",
+      `Are you sure you want to leave ${
+        groupChatsMap[selectedChat]?.name || "this group"
+      }?`,
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Yes",
+          style: "destructive",
+          onPress: async () => {
+            try {
+              await remove(
+                ref(
+                  database,
+                  `groupChats/${selectedChat}/participants/${user.uid}`
+                )
+              );
+              await remove(
+                ref(database, `users/${user.uid}/groups/${selectedChat}`)
+              );
+              Alert.alert(
+                "Group Left",
+                `You have left ${
+                  groupChatsMap[selectedChat]?.name || "the group"
+                }.`
+              );
+              setSelectedChat("global"); // Switch to global chat
+            } catch (err) {
+              console.error("Error leaving group:", err);
+              Alert.alert("Error", "Could not leave group.");
+            }
+          },
         },
-      },
-    ]);
+      ]
+    );
   };
 
   const handleTopRightIconPress = () => {
@@ -765,7 +833,7 @@ const Chat = () => {
       Alert.alert("Error", "Cannot report user. Information missing.");
       return;
     }
-    setPopupVisible(false); 
+    setPopupVisible(false);
     setIsReportModalVisible(true);
   };
 
@@ -802,9 +870,9 @@ const Chat = () => {
       additionalInfo: reportAdditionalInfo.trim(),
       timestamp: Date.now(),
       messageId: longPressedMessage.key,
-      messageText: longPressedMessage.text, 
+      messageText: longPressedMessage.text,
       chatType: selectedChat === "global" ? "global" : "group",
-      chatId: selectedChat, 
+      chatId: selectedChat,
     };
 
     try {
@@ -813,7 +881,7 @@ const Chat = () => {
       await set(newReportRef, reportData);
 
       setReportConfirmation("Report sent successfully.");
-      setTimeout(() => setReportConfirmation(null), 3000); 
+      setTimeout(() => setReportConfirmation(null), 3000);
       handleCloseReportModal();
     } catch (error) {
       console.error("Error submitting report:", error);
@@ -827,7 +895,6 @@ const Chat = () => {
     selectedChat === "global"
       ? "Global Chat"
       : groupChatsMap[selectedChat]?.name || "Loading Group...";
-
 
   // OPTIMIZATION: Wrap MessageItem with React.memo
   // Note: For memo to be effective, props passed to MessageItem should be stable or primitive.
@@ -847,7 +914,8 @@ const Chat = () => {
           onPress={() => handleBubblePress(item.key)} // Using memoized handleBubblePress
           onLongPress={(e) => {
             const { pageX, pageY } = e.nativeEvent;
-            handleBubbleLongPress( // Using memoized handleBubbleLongPress
+            handleBubbleLongPress(
+              // Using memoized handleBubbleLongPress
               isCurrentUserMessage,
               item.senderUid,
               item.senderName,
@@ -933,7 +1001,8 @@ const Chat = () => {
         onPress={() => handleBubblePress(item.key)} // Using memoized handleBubblePress
         onLongPress={(e) => {
           const { pageX, pageY } = e.nativeEvent;
-          handleBubbleLongPress( // Using memoized handleBubbleLongPress
+          handleBubbleLongPress(
+            // Using memoized handleBubbleLongPress
             isCurrentUserMessage,
             item.senderUid,
             item.senderName,
@@ -982,9 +1051,10 @@ const Chat = () => {
       </TouchableOpacity>
     );
   });
-  MessageItem.displayName = 'MessageItem'; // For better debugging
+  MessageItem.displayName = "MessageItem"; // For better debugging
 
-  if (!isSignedIn && initialLoad) { // Show skeleton only on initial load when not signed in
+  if (!isSignedIn && initialLoad) {
+    // Show skeleton only on initial load when not signed in
     return (
       <View
         style={[
@@ -996,19 +1066,28 @@ const Chat = () => {
       </View>
     );
   }
-  if (!isSignedIn && !initialLoad) { // If not signed in after initial load, show a sign-in prompt
-      return (
-          <View style={[styles.container, styles.centeredMessage, { backgroundColor: theme.offWhite2 }]}>
-              <Text style={{color: titleBarTextColor, fontSize: 18}}>Please sign in to view chats.</Text>
-              {/* Optionally, add a sign-in button here */}
-          </View>
-      )
+  if (!isSignedIn) {
+    return (
+      <View
+        style={[
+          styles.signInMessageContainer,
+          { backgroundColor: theme.offWhite2 },
+        ]}
+      >
+        <ChatSkeleton />
+      </View>
+    );
   }
-
 
   return (
     <View style={[styles.container, { backgroundColor: theme.offWhite2 }]}>
-      <StatusBar barStyle={mode === "dark" || mode === "yuck" || mode === "random" ? "light-content" : "dark-content"} />
+      <StatusBar
+        barStyle={
+          mode === "dark" || mode === "yuck" || mode === "random"
+            ? "light-content"
+            : "dark-content"
+        }
+      />
       {/* Header */}
       <View
         style={[styles.headerContainer, { backgroundColor: theme.offWhite2 }]}
@@ -1058,7 +1137,11 @@ const Chat = () => {
 
       {selectedChat !== "global" && participantUsernames.length > 0 && (
         <View style={styles.participantList}>
-          <Text style={styles.participantText} numberOfLines={1} ellipsizeMode="tail">
+          <Text
+            style={styles.participantText}
+            numberOfLines={1}
+            ellipsizeMode="tail"
+          >
             {participantUsernames.join(", ")}
           </Text>
         </View>
@@ -1074,8 +1157,12 @@ const Chat = () => {
           const { contentOffset, layoutMeasurement, contentSize } =
             e.nativeEvent;
           // A common threshold to show scroll to bottom button is when user is not near the bottom.
-          const isNearBottom = contentOffset.y + layoutMeasurement.height >= contentSize.height - layoutMeasurement.height / 2; // e.g. half screen from bottom
-          setShowScrollDown(!isNearBottom && contentSize.height > layoutMeasurement.height); // Only show if scrollable
+          const isNearBottom =
+            contentOffset.y + layoutMeasurement.height >=
+            contentSize.height - layoutMeasurement.height / 2; // e.g. half screen from bottom
+          setShowScrollDown(
+            !isNearBottom && contentSize.height > layoutMeasurement.height
+          ); // Only show if scrollable
         }}
         scrollEventThrottle={150} // Adjusted throttle
         onContentSizeChange={() => {
@@ -1095,11 +1182,13 @@ const Chat = () => {
         //   {length: 70, offset: 70 * index, index}
         // )}
         ListEmptyComponent={
-            !initialLoad && messages.length === 0 ? ( // Show only after initial load attempt and if messages are empty
-                <View style={styles.centeredMessage}>
-                    <Text style={{color: titleBarTextColor, fontSize: 16}}>No messages yet. Start the conversation!</Text>
-                </View>
-            ) : null
+          !initialLoad && messages.length === 0 ? ( // Show only after initial load attempt and if messages are empty
+            <View style={styles.centeredMessage}>
+              <Text style={{ color: titleBarTextColor, fontSize: 16 }}>
+                No messages yet. Start the conversation!
+              </Text>
+            </View>
+          ) : null
         }
       />
 
@@ -1120,7 +1209,7 @@ const Chat = () => {
         </View>
       )}
 
-      <KeyboardAvoidingView 
+      <KeyboardAvoidingView
         behavior={Platform.OS === "ios" ? "padding" : undefined} // 'height' can sometimes cause issues
         keyboardVerticalOffset={Platform.OS === "ios" ? 60 : 0} // Adjust as needed
       >
@@ -1144,93 +1233,153 @@ const Chat = () => {
             blurOnSubmit={false} // Keep keyboard open after send if desired, or true to close
             // multiline // If you want multiline input
           />
-          <Pressable style={styles.sendButton} onPress={handleSendMessage} disabled={!newMessageText.trim()}>
+          <Pressable
+            style={styles.sendButton}
+            onPress={handleSendMessage}
+            disabled={!newMessageText.trim()}
+          >
             <Text style={styles.sendButtonText}>Send</Text>
           </Pressable>
         </View>
       </KeyboardAvoidingView>
 
       {/* Popup modal for message actions */}
-      <Modal visible={popupVisible} transparent animationType="fade" onRequestClose={() => setPopupVisible(false)}>
+      <Modal
+        visible={popupVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setPopupVisible(false)}
+      >
         <TouchableWithoutFeedback onPress={() => setPopupVisible(false)}>
           <View style={styles.modalOverlay} />
         </TouchableWithoutFeedback>
-        {popupVisible && longPressedMessage && ( // Ensure longPressedMessage is not null
-          <Animated.View // Consider removing Animated.View if not using animations here, or implement them
-            style={[
-              styles.popupContainer,
-              {
-                top: popupY,
-                left: Math.min(popupX, Dimensions.get("window").width - (styles.popupContainer.width || 180) - 10), // ensure it stays on screen
-              },
-            ]}
-          >
-            {longPressedMessage.type !== "receipt" && (
-              <>
+        {popupVisible &&
+          longPressedMessage && ( // Ensure longPressedMessage is not null
+            <Animated.View // Consider removing Animated.View if not using animations here, or implement them
+              style={[
+                styles.popupContainer,
+                {
+                  top: popupY,
+                  left: Math.min(
+                    popupX,
+                    Dimensions.get("window").width -
+                      (styles.popupContainer.width || 180) -
+                      10
+                  ), // ensure it stays on screen
+                },
+              ]}
+            >
+              {longPressedMessage.type !== "receipt" && (
+                <>
+                  <TouchableOpacity
+                    onPress={handleCopyMessage}
+                    style={styles.popupItem}
+                  >
+                    <View style={styles.popupItemContent}>
+                      <Icon
+                        name="copy"
+                        size={18}
+                        color="#fff"
+                        style={styles.popupIcon}
+                      />
+                      <Text style={styles.popupText}>Copy</Text>
+                    </View>
+                  </TouchableOpacity>
+                  <View style={styles.popupDivider} />
+                </>
+              )}
+
+              {!isTargetFriend ? (
                 <TouchableOpacity
-                  onPress={handleCopyMessage}
+                  onPress={handleAddFriend}
                   style={styles.popupItem}
                 >
                   <View style={styles.popupItemContent}>
-                    <Icon name="copy" size={18} color="#fff" style={styles.popupIcon} />
-                    <Text style={styles.popupText}>Copy</Text>
+                    <Icon
+                      name="user-plus"
+                      size={18}
+                      color="#fff"
+                      style={styles.popupIcon}
+                    />
+                    <Text style={styles.popupText}>Add Friend</Text>
                   </View>
                 </TouchableOpacity>
-                <View style={styles.popupDivider} />
-              </>
-            )}
-
-            {!isTargetFriend ? (
-              <TouchableOpacity onPress={handleAddFriend} style={styles.popupItem} >
+              ) : (
+                <TouchableOpacity
+                  onPress={confirmRemoveFriend}
+                  style={styles.popupItem}
+                >
+                  <View style={styles.popupItemContent}>
+                    <Icon
+                      name="user-x"
+                      size={18}
+                      color="red"
+                      style={styles.popupIcon}
+                    />
+                    <Text style={styles.popupText}>Remove Friend</Text>
+                  </View>
+                </TouchableOpacity>
+              )}
+              <View style={styles.popupDivider} />
+              <TouchableOpacity
+                onPress={handleMessage}
+                style={styles.popupItem}
+              >
                 <View style={styles.popupItemContent}>
-                  <Icon name="user-plus" size={18} color="#fff" style={styles.popupIcon} />
-                  <Text style={styles.popupText}>Add Friend</Text>
+                  <Icon
+                    name="message-circle"
+                    size={18}
+                    color="#fff"
+                    style={styles.popupIcon}
+                  />
+                  <Text style={styles.popupText}>Message</Text>
                 </View>
               </TouchableOpacity>
-            ) : (
-              <TouchableOpacity onPress={confirmRemoveFriend} style={styles.popupItem} >
-                <View style={styles.popupItemContent}>
-                  <Icon name="user-x" size={18} color="red" style={styles.popupIcon} />
-                  <Text style={styles.popupText}>Remove Friend</Text>
-                </View>
-              </TouchableOpacity>
-            )}
-            <View style={styles.popupDivider} />
-            <TouchableOpacity onPress={handleMessage} style={styles.popupItem}>
-              <View style={styles.popupItemContent}>
-                <Icon name="message-circle" size={18} color="#fff" style={styles.popupIcon} />
-                <Text style={styles.popupText}>Message</Text>
-              </View>
-            </TouchableOpacity>
 
-            {selectedChat === "global" &&
-              popupTargetUid &&
-              popupTargetUid !== user?.uid && ( 
+              {selectedChat === "global" &&
+                popupTargetUid &&
+                popupTargetUid !== user?.uid && (
+                  <>
+                    <View style={styles.popupDivider} />
+                    <TouchableOpacity
+                      onPress={handleOpenReportModal}
+                      style={styles.popupItem}
+                    >
+                      <View style={styles.popupItemContent}>
+                        <Icon
+                          name="alert-triangle"
+                          size={18}
+                          color={"red"}
+                          style={styles.popupIcon}
+                        />
+                        <Text style={[styles.popupText, { color: "red" }]}>
+                          Report User
+                        </Text>
+                      </View>
+                    </TouchableOpacity>
+                  </>
+                )}
+              {longPressedMessage.type === "receipt" && (
                 <>
                   <View style={styles.popupDivider} />
-                  <TouchableOpacity onPress={handleOpenReportModal} style={styles.popupItem} >
+                  <TouchableOpacity
+                    onPress={handleImportReceipt}
+                    style={styles.popupItem}
+                  >
                     <View style={styles.popupItemContent}>
-                      <Icon name="alert-triangle" size={18} color={"red"} style={styles.popupIcon} />
-                      <Text style={[styles.popupText, { color: "red" }]}>
-                        Report User
-                      </Text>
+                      <Icon
+                        name="download-cloud"
+                        size={18}
+                        color="#fff"
+                        style={styles.popupIcon}
+                      />
+                      <Text style={styles.popupText}>Import Receipt</Text>
                     </View>
                   </TouchableOpacity>
                 </>
               )}
-            {longPressedMessage.type === "receipt" && (
-              <>
-                <View style={styles.popupDivider} />
-                <TouchableOpacity onPress={handleImportReceipt} style={styles.popupItem} >
-                  <View style={styles.popupItemContent}>
-                    <Icon name="download-cloud" size={18} color="#fff" style={styles.popupIcon} />
-                    <Text style={styles.popupText}>Import Receipt</Text>
-                  </View>
-                </TouchableOpacity>
-              </>
-            )}
-          </Animated.View>
-        )}
+            </Animated.View>
+          )}
       </Modal>
 
       {/* Report Modal */}
@@ -1313,7 +1462,12 @@ const Chat = () => {
                 setDropdownOpen(false);
               }}
             >
-              <FontAwesome name="globe" size={16} color={theme.yellow} style={styles.dropdownIcon} />
+              <FontAwesome
+                name="globe"
+                size={16}
+                color={theme.yellow}
+                style={styles.dropdownIcon}
+              />
               <Text style={[styles.dropdownItemText, styles.globalChatText]}>
                 Global Chat
               </Text>
@@ -1330,7 +1484,12 @@ const Chat = () => {
                   setDropdownOpen(false);
                 }}
               >
-                <FontAwesome name="users" size={16} color="#fff" style={styles.dropdownIcon} />
+                <FontAwesome
+                  name="users"
+                  size={16}
+                  color="#fff"
+                  style={styles.dropdownIcon}
+                />
                 <Text style={styles.dropdownItemText}>{g.name}</Text>
               </TouchableOpacity>
             ))}
@@ -1349,8 +1508,8 @@ const styles = StyleSheet.create({
   },
   centeredMessage: {
     flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
+    justifyContent: "center",
+    alignItems: "center",
     padding: 20,
   },
   headerContainer: {
@@ -1362,10 +1521,10 @@ const styles = StyleSheet.create({
     shadowColor: "#000",
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.1, // Reduced opacity
-    shadowRadius: 2,  // Reduced radius
-    elevation: 3,     // Reduced elevation
+    shadowRadius: 2, // Reduced radius
+    elevation: 3, // Reduced elevation
     borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: '#ccc', // Softer border
+    borderBottomColor: "#ccc", // Softer border
   },
   headerTitleWrapper: {
     flex: 1,
@@ -1385,7 +1544,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     paddingVertical: 6,
     borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: '#0a2f44', // Darker border for contrast
+    borderBottomColor: "#0a2f44", // Darker border for contrast
   },
   participantText: {
     color: "#ddd", // Consider theme variable
@@ -1418,11 +1577,11 @@ const styles = StyleSheet.create({
     right: 20,
     bottom: 80, // Ensure it's above input area
     backgroundColor: "rgba(0, 0, 0, 0.6)",
-    width: 44,  // Touch target size
+    width: 44, // Touch target size
     height: 44, // Touch target size
     borderRadius: 22, // Circular
-    justifyContent: 'center',
-    alignItems: 'center',
+    justifyContent: "center",
+    alignItems: "center",
     zIndex: 999,
     elevation: 5,
   },
@@ -1448,13 +1607,13 @@ const styles = StyleSheet.create({
     marginTop: 6, // Increased spacing
     fontSize: 11, // Smaller timestamp
     color: "#bbb", // Lighter color
-    alignSelf: 'flex-start',
+    alignSelf: "flex-start",
   },
   selfTimestamp: {
     marginTop: 6,
     fontSize: 11,
     color: "#555", // Darker for better contrast on light bubble
-    alignSelf: 'flex-end',
+    alignSelf: "flex-end",
   },
   cooldownPopup: {
     position: "absolute",
@@ -1480,7 +1639,7 @@ const styles = StyleSheet.create({
     borderTopWidth: 1,
     borderTopColor: colors.yellow, // From theme
     alignItems: "center",
-    backgroundColor: '#104050', // Darker background for input area
+    backgroundColor: "#104050", // Darker background for input area
   },
   receiptIcon: {
     padding: 8, // Increased touch area
@@ -1503,8 +1662,8 @@ const styles = StyleSheet.create({
     paddingHorizontal: 18, // Wider button
     backgroundColor: colors.yellow, // From theme
     borderRadius: 25, // Match input
-    justifyContent: 'center',
-    alignItems: 'center',
+    justifyContent: "center",
+    alignItems: "center",
   },
   sendButtonText: {
     color: "black",
@@ -1513,7 +1672,12 @@ const styles = StyleSheet.create({
   },
   dropdownPanel: {
     position: "absolute",
-    top: Platform.OS === 'ios' ? (Dimensions.get('window').height > 800 ? 90 : 75) : 65, // Adjust based on header height & notch
+    top:
+      Platform.OS === "ios"
+        ? Dimensions.get("window").height > 800
+          ? 90
+          : 75
+        : 65, // Adjust based on header height & notch
     left: 0,
     right: 0,
     alignItems: "center",
@@ -1637,7 +1801,7 @@ const styles = StyleSheet.create({
     marginTop: 6,
     marginBottom: 6,
     borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: 'rgba(255,255,255,0.2)',
+    borderTopColor: "rgba(255,255,255,0.2)",
     paddingTop: 6,
   },
   receiptItemRow: {
@@ -1651,22 +1815,22 @@ const styles = StyleSheet.create({
     color: "#ccc",
     fontSize: 11,
     marginLeft: 10,
-    fontStyle: 'italic',
+    fontStyle: "italic",
   },
   receiptTimestamp: {
     marginTop: 8,
     fontSize: 11,
     color: "#ccc",
-    alignSelf: 'flex-start', // Or flex-end based on user
+    alignSelf: "flex-start", // Or flex-end based on user
   },
   reportModalKeyboardAvoidingView: {
     flex: 1,
-    justifyContent: "flex-end", 
+    justifyContent: "flex-end",
   },
   reportModalContainer: {
-    backgroundColor: "#1E2A38", 
+    backgroundColor: "#1E2A38",
     padding: 20,
-    paddingBottom: Platform.OS === 'ios' ? 30 : 20, // Extra padding for home indicator
+    paddingBottom: Platform.OS === "ios" ? 30 : 20, // Extra padding for home indicator
     borderTopLeftRadius: 20,
     borderTopRightRadius: 20,
     shadowColor: "#000",
@@ -1696,7 +1860,7 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
     fontSize: 16,
     minHeight: 50,
-    textAlignVertical: "top", 
+    textAlignVertical: "top",
     borderColor: "#455a64",
     borderWidth: 1,
     marginBottom: 15,
@@ -1717,10 +1881,10 @@ const styles = StyleSheet.create({
     marginHorizontal: 5,
   },
   reportCancelButton: {
-    backgroundColor: "#4F5D75", 
+    backgroundColor: "#4F5D75",
   },
   reportSubmitButton: {
-    backgroundColor: "red", 
+    backgroundColor: "red",
   },
   reportButtonText: {
     color: "#fff",
@@ -1728,4 +1892,3 @@ const styles = StyleSheet.create({
     fontWeight: "bold",
   },
 });
-

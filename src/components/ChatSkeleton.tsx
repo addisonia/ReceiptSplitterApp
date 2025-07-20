@@ -10,6 +10,7 @@ import {
 } from "react-native";
 import { useTheme } from "../context/ThemeContext";
 import { colors } from "../components/ColorThemes";
+import GoogleSignInButton from "../components/GoogleSignInButton";
 
 const SPLIT_STORAGE_KEY = "@split_state";
 const screenHeight = Dimensions.get("window").height;
@@ -62,8 +63,8 @@ const ChatSkeleton: React.FC = () => {
   const { theme, mode } = useTheme();
 
   // Text color: white in dark mode, otherwise theme.black
-  const textColor = 
-    mode === "yuck" || mode === "dark" ? '#ffffff' : theme.black;
+  const textColor =
+    mode === "yuck" || mode === "dark" ? "#ffffff" : theme.black;
 
   const messages: SkeletonMessageProps[] = [
     { width: "60%", alignSelf: "flex-start" },
@@ -94,9 +95,19 @@ const ChatSkeleton: React.FC = () => {
         <Text style={[styles.signInText, { color: textColor }]}>
           Sign In To Access Chat Rooms
         </Text>
+
+        {/* new google sign‑in button */}
+        <GoogleSignInButton
+          onSuccess={handleGoogleSuccess}
+          style={{ marginTop: 20 }}
+        />
       </View>
     </View>
   );
+};
+
+const handleGoogleSuccess = () => {
+  // nothing to do here – Chat.tsx will react to the auth change
 };
 
 export default ChatSkeleton;
