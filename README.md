@@ -32,3 +32,4 @@ required installations to run code:
 - npm install --save-dev babel-plugin-dotenv
 - npx expo install expo-notifications
 - npx expo install expo-clipboard
+- npx expo install expo-linear-gradient

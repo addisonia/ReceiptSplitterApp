@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import {
   View,
   StyleSheet,
@@ -12,30 +12,23 @@ import {
   Animated,
   TextInput,
 } from "react-native";
+// ✨ Import LinearGradient for the button flash effect
+import { LinearGradient } from "expo-linear-gradient";
 import AppText from "../../components/AppText";
 import { FontAwesome5 } from "@expo/vector-icons";
-import { useNavigation, useFocusEffect } from "@react-navigation/native";
+import { useNavigation } from "@react-navigation/native";
 import { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { RootStackParamList } from "../types/RootStackParams";
-// import colors from "../../constants/colors";
 import GoogleSignInButton from "../components/GoogleSignInButton";
 import { GoogleSignin } from "@react-native-google-signin/google-signin";
 import { auth, database } from "../firebase";
 import { User, signOut } from "firebase/auth";
 import PrivacyPolicy from "../components/PrivacyPolicy";
 import { useTheme } from "../context/ThemeContext";
-// removed: no longer importing `child` or `onValue`; we only use get() and update().
 import { ref, get, update } from "firebase/database";
-import Receipts from "./Receipts";
 import { WEB_CLIENT_ID } from "@env";
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import {
-  colors,
-  offWhiteTheme,
-  yuckTheme,
-  darkTheme,
-  getRandomHexColor,
-} from "../components/ColorThemes";
+import { colors } from "../components/ColorThemes";
 
 type HomeScreenNavigationProp = NativeStackNavigationProp<
   RootStackParamList,
@@ -48,12 +41,10 @@ const screenWidth = Dimensions.get("window").width;
 const buttonWidth = screenWidth * 0.5;
 const buttonHeight = buttonWidth / 2;
 
-// we keep this session tracking object if you’d like to avoid regenerating random usernames in the same session
 const generatedForUid: { [uid: string]: boolean } = {};
 
 const Home = () => {
   const navigation = useNavigation<HomeScreenNavigationProp>();
-
   const { theme, mode } = useTheme();
 
   const titleTextColor =
@@ -67,21 +58,20 @@ const Home = () => {
 
   const [user, setUser] = useState<User | null>(null);
   const [isSignInModalVisible, setSignInModalVisible] = useState(false);
-
   const [showSignInBanner, setShowSignInBanner] = useState(false);
-  const bannerOpacity = useState(new Animated.Value(0))[0];
-
+  const bannerOpacity = useRef(new Animated.Value(0)).current;
   const [username, setUsername] = useState<string>("");
   const [isEditingUsername, setIsEditingUsername] = useState(false);
-
   const [gameIconColor, setGameIconColor] = useState(colors.yellow);
   const [userIconColor, setUserIconColor] = useState(colors.yellow);
   const [receiptIconColor, setReceiptIconColor] = useState(colors.yellow);
   const [privacyIconColor, setPrivacyIconColor] = useState(colors.yellow);
-  const [buttonBgColor, setButtonBgColor] = useState(colors.yellow);
   const [isPrivacyModalVisible, setPrivacyModalVisible] = useState(false);
 
-  // load theme from AsyncStorage on mount
+  const scaleValue = useRef(new Animated.Value(1)).current;
+  // Animated value for the gradient flash opacity
+  const gradientOpacity = useRef(new Animated.Value(0)).current;
+
   useEffect(() => {
     (async () => {
       try {
@@ -107,10 +97,8 @@ const Home = () => {
     return () => unsubscribeAuth();
   }, []);
 
-  // changed: this no longer references the global "usernames" node. only reads/writes to users/<uid>/username.
   const fetchOrCreateUsername = async (uid: string) => {
     if (generatedForUid[uid]) {
-      // we've already fetched or created a username in this session
       const finalSnap = await get(ref(database, `users/${uid}/username`));
       if (finalSnap.exists()) {
         setUsername(finalSnap.val());
@@ -126,7 +114,6 @@ const Home = () => {
         const existingName = snap.val();
         setUsername(existingName);
       } else {
-        // no username in db, generate a random one
         const newRand = generateRandomUsername();
         setUsername(newRand);
         await setUsernameInDB(uid, newRand);
@@ -137,7 +124,6 @@ const Home = () => {
     }
   };
 
-  // changed: we only write to `users/<uid>/username`. we do not write to `usernames/<someUserName>`.
   const setUsernameInDB = async (uid: string, newUsername: string) => {
     try {
       const userRef = ref(database, `users/${uid}/username`);
@@ -145,10 +131,9 @@ const Home = () => {
       const currVal = currSnap.val();
 
       if (currVal === newUsername) {
-        return; // no change needed
+        return;
       }
 
-      // simply update the username under the user’s path
       await update(ref(database), {
         [`users/${uid}/username`]: newUsername,
       });
@@ -168,32 +153,21 @@ const Home = () => {
     return result;
   };
 
-  // home.tsx
   const handleSignOut = async () => {
     try {
-      // Configure Google Sign-In before signing out
       GoogleSignin.configure({
-        webClientId: WEB_CLIENT_ID, // From your .env file
+        webClientId: WEB_CLIENT_ID,
         offlineAccess: true,
         scopes: ["profile", "email"],
       });
-      console.log("Google Sign-In configured");
-
-      // Clear Google Sign-In cache
       await GoogleSignin.signOut();
-      console.log("Google Sign-In cache cleared");
-
-      // Sign out from Firebase
       await signOut(auth);
-      console.log("Firebase sign-out successful");
-
       setSignInModalVisible(false);
     } catch (error) {
       console.error("Sign out error:", error);
     }
   };
 
-  // changed: removed the code that checks if “usernames/<newUsername>” already exists and the updates to that node.
   const handleUsernameSubmit = async () => {
     if (!user) return;
     const newUsername = username.trim();
@@ -207,7 +181,6 @@ const Home = () => {
       const currentUsernameSnapshot = await get(currentUsernameRef);
       const currentUsername = currentUsernameSnapshot.val();
 
-      // if unchanged, close the edit field
       if (currentUsername === newUsername) {
         setIsEditingUsername(false);
         return;
@@ -216,7 +189,6 @@ const Home = () => {
       const updates: { [key: string]: any } = {};
       updates[`users/${user.uid}/username`] = newUsername;
 
-      // you may still want to move existing messages if you store them under "chat/messages/<username>"
       if (currentUsername) {
         const oldMessagesRef = ref(
           database,
@@ -281,6 +253,37 @@ const Home = () => {
     navigation.navigate("Split", {});
   };
 
+  // Updated animation handlers for scale and gradient flash
+  const handlePressIn = () => {
+    Animated.parallel([
+      Animated.spring(scaleValue, {
+        toValue: 0.95,
+        useNativeDriver: true,
+      }),
+      Animated.timing(gradientOpacity, {
+        toValue: 1,
+        duration: 100,
+        useNativeDriver: true,
+      }),
+    ]).start();
+  };
+
+  const handlePressOut = () => {
+    Animated.parallel([
+      Animated.spring(scaleValue, {
+        toValue: 1,
+        friction: 3,
+        tension: 40,
+        useNativeDriver: true,
+      }),
+      Animated.timing(gradientOpacity, {
+        toValue: 0,
+        duration: 300,
+        useNativeDriver: true,
+      }),
+    ]).start();
+  };
+
   const renderAuthContent = () => {
     if (user) {
       return (
@@ -343,7 +346,6 @@ const Home = () => {
         </View>
       );
     }
-    // user not signed in yet
     return (
       <View style={styles.authContainer}>
         <AppText
@@ -367,9 +369,13 @@ const Home = () => {
     );
   };
 
+  const animatedButtonStyle = {
+    transform: [{ scale: scaleValue }],
+  };
+
   return (
     <View style={[styles.container, { backgroundColor: theme.offWhite2 }]}>
-      {/* icon row */}
+      {/* Icon Row */}
       <View style={styles.iconRow}>
         <Pressable
           onPressIn={() => setGameIconColor(colors.green)}
@@ -431,6 +437,7 @@ const Home = () => {
         </Pressable>
       </View>
 
+      {/* Banner */}
       {showSignInBanner && (
         <Animated.View
           style={[
@@ -445,6 +452,7 @@ const Home = () => {
         </Animated.View>
       )}
 
+      {/* Title */}
       <View style={styles.titleContainer}>
         <AppText
           style={[
@@ -471,26 +479,47 @@ const Home = () => {
         </AppText>
       </View>
 
+      {/* Button */}
       <View style={styles.bottom}>
-        <Pressable
-          style={[styles.startButton,
-            {
-              backgroundColor: mode === "offWhite" ? "#7d001d" : buttonBgColor
-            }]}
-          onPress={handleStartSplitting}
-          onPressIn={() => setButtonBgColor(colors.green)}
-          onPressOut={() => setButtonBgColor(colors.yellow)}
-        >
-          <AppText style={[
-            styles.buttonText, styles.boldText,
-            {
-              color: mode === "offWhite" ? "#ffffff" : colors.black
-            }]}>
-            Start Splitting
-          </AppText>
-        </Pressable>
+        {/* Updated button structure for gradient flash */}
+        <Animated.View style={animatedButtonStyle}>
+          <Pressable
+            onPress={handleStartSplitting}
+            onPressIn={handlePressIn}
+            onPressOut={handlePressOut}
+          >
+            <View
+              style={[
+                styles.startButton,
+                {
+                  backgroundColor:
+                    mode === "offWhite" ? "#7d001d" : colors.yellow,
+                },
+              ]}
+            >
+              <Animated.View style={[{...StyleSheet.absoluteFillObject, opacity: gradientOpacity}]}>
+                  <LinearGradient
+                      colors={['#69F0AE', '#08f800']}
+                      style={StyleSheet.absoluteFillObject}
+                  />
+              </Animated.View>
+              <AppText
+                style={[
+                  styles.buttonText,
+                  styles.boldText,
+                  {
+                    color: mode === "offWhite" ? "#ffffff" : colors.black,
+                  },
+                ]}
+              >
+                Start Splitting
+              </AppText>
+            </View>
+          </Pressable>
+        </Animated.View>
       </View>
 
+      {/* Modals */}
       <PrivacyPolicy
         isVisible={isPrivacyModalVisible}
         onClose={() => setPrivacyModalVisible(false)}
@@ -536,7 +565,6 @@ export default Home;
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    // backgroundColor: colors.yuck,
     alignItems: "center",
     justifyContent: "center",
   },
@@ -596,9 +624,10 @@ const styles = StyleSheet.create({
   boldText: {
     fontWeight: "bold",
   },
+  //Adjusted position to be more centered
   bottom: {
     position: "absolute",
-    bottom: screenWidth / 4,
+    bottom: Dimensions.get("window").height * 0.22,
     width: "100%",
     alignItems: "center",
     zIndex: 5,
@@ -606,9 +635,19 @@ const styles = StyleSheet.create({
   startButton: {
     width: buttonWidth,
     height: buttonHeight,
-    borderRadius: 5,
+    borderRadius: 15,
     alignItems: "center",
     justifyContent: "center",
+    shadowColor: "#000",
+    shadowOffset: {
+      width: 0,
+      height: 4,
+    },
+    shadowOpacity: 0.3,
+    shadowRadius: 4.65,
+    elevation: 8,
+    // Added overflow hidden to contain the gradient
+    overflow: 'hidden',
   },
   buttonText: {
     fontSize: 24,
