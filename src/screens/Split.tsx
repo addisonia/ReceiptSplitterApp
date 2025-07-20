@@ -127,6 +127,10 @@ const Split: React.FC = () => {
   const [items, setItems] = useState<ItemType[]>([]);
   const [splitTaxEvenly, setSplitTaxEvenly] = useState<boolean>(true);
 
+  const [resetTapCount, setResetTapCount] = useState(0);
+  const resetTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const [showResetBanner, setShowResetBanner] = useState(false);
+
   const [isEditingReceiptName, setIsEditingReceiptName] =
     useState<boolean>(false);
   const [showSignInBanner, setShowSignInBanner] = useState<boolean>(false);
@@ -142,6 +146,14 @@ const Split: React.FC = () => {
 
   const SPLIT_STORAGE_KEY: string = "@split_state";
   const importedReceiptUsed = useRef<boolean>(false);
+
+  const startResetTimer = () => {
+    if (resetTimerRef.current) clearTimeout(resetTimerRef.current);
+    resetTimerRef.current = setTimeout(() => {
+      setResetTapCount(0);
+      setShowResetBanner(false);
+    }, 7000); // 7 seconds
+  };
 
   // Initial load from cache (runs once)
   useEffect(() => {
@@ -515,6 +527,24 @@ const Split: React.FC = () => {
     setTax(0);
   };
 
+  const confirmOrClearData = () => {
+    if (resetTapCount === 0) {
+      // first tap – ask for confirmation
+      setResetTapCount(1);
+      setShowResetBanner(true);
+      startResetTimer();
+      return;
+    }
+
+    // second tap within 7 s – actually reset
+    if (resetTimerRef.current) clearTimeout(resetTimerRef.current);
+    setResetTapCount(0);
+    setShowResetBanner(false);
+
+    // existing clear logic
+    handleClearData();
+  };
+
   const goHome = () => {
     navigation.navigate("MainTabs", { screen: "Home" });
   };
@@ -646,16 +676,13 @@ const Split: React.FC = () => {
                   Save
                 </Text>
               </Pressable>
-
               <Pressable
                 style={({ pressed }) => [
                   styles.topButton,
                   styles.clearDataButton,
-                  {
-                    backgroundColor: pressed ? theme.green : theme.yellow,
-                  },
+                  { backgroundColor: pressed ? theme.green : theme.yellow },
                 ]}
-                onPress={handleClearData}
+                onPress={confirmOrClearData} // <<<  changed
               >
                 <Text style={[styles.buttonText, { color: theme.black }]}>
                   Reset
@@ -669,6 +696,41 @@ const Split: React.FC = () => {
               colors={colors}
             />
           </View>
+
+          {showResetBanner && (
+            <View
+              style={{
+                position: "absolute",
+                top: 0,
+                right: 0,
+                bottom: 0,
+                left: 0,
+                justifyContent: "center", // vertical center
+                alignItems: "center", // horizontal center
+                zIndex: 10,
+              }}
+              pointerEvents="none" // banner shouldn’t block taps
+            >
+              <View
+                style={{
+                  paddingVertical: 8,
+                  paddingHorizontal: 16,
+                  backgroundColor: "orange",
+                  borderRadius: 6,
+                }}
+              >
+                <Text
+                  style={{
+                    color: theme.black,
+                    fontWeight: "600",
+                    textAlign: "center",
+                  }}
+                >
+                  Tap reset again to confirm you want to reset this receipt
+                </Text>
+              </View>
+            </View>
+          )}
 
           {/* Receipt Name */}
           <View
