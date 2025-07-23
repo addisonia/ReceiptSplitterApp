@@ -12,7 +12,6 @@ import {
   Animated,
   TextInput,
 } from "react-native";
-// ✨ Import LinearGradient for the button flash effect
 import { LinearGradient } from "expo-linear-gradient";
 import AppText from "../../components/AppText";
 import { FontAwesome5 } from "@expo/vector-icons";

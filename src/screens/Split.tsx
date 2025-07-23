@@ -142,6 +142,12 @@ const Split: React.FC = () => {
   const [showSavedBanner, setShowSavedBanner] = useState<boolean>(false);
   const [savedBannerOpacity] = useState<Animated.Value>(new Animated.Value(0));
 
+  const [showResetConfirmationBanner, setShowResetConfirmationBanner] =
+    useState<boolean>(false);
+  const [resetConfirmationBannerOpacity] = useState<Animated.Value>(
+    new Animated.Value(0)
+  );
+
   const [isInitialized, setIsInitialized] = useState<boolean>(false);
 
   const SPLIT_STORAGE_KEY: string = "@split_state";
@@ -309,6 +315,26 @@ const Split: React.FC = () => {
           useNativeDriver: true,
         }).start(() => {
           setShowSavedBanner(false);
+        });
+      }, 1500);
+    });
+  };
+
+  const showReceiptResetBanner = () => {
+    setShowResetConfirmationBanner(true);
+    resetConfirmationBannerOpacity.setValue(0);
+    Animated.timing(resetConfirmationBannerOpacity, {
+      toValue: 1,
+      duration: 300,
+      useNativeDriver: true,
+    }).start(() => {
+      setTimeout(() => {
+        Animated.timing(resetConfirmationBannerOpacity, {
+          toValue: 0,
+          duration: 300,
+          useNativeDriver: true,
+        }).start(() => {
+          setShowResetConfirmationBanner(false);
         });
       }, 1500);
     });
@@ -536,13 +562,15 @@ const Split: React.FC = () => {
       return;
     }
 
-    // second tap within 7 s – actually reset
+    // second tap within 7s – actually reset
     if (resetTimerRef.current) clearTimeout(resetTimerRef.current);
     setResetTapCount(0);
     setShowResetBanner(false);
 
     // existing clear logic
     handleClearData();
+    // show confirmation banner
+    showReceiptResetBanner();
   };
 
   const goHome = () => {
@@ -624,6 +652,37 @@ const Split: React.FC = () => {
           </Animated.View>
         )}
 
+        {/* Reset Warning Banner */}
+        {showResetBanner && (
+          <View
+            style={[
+              styles.savedBanner, // Reuse style for positioning
+              { backgroundColor: "orange" },
+            ]}
+          >
+            <Text style={[styles.savedBannerText, { color: theme.black }]}>
+              Tap reset again to confirm you want to reset this receipt
+            </Text>
+          </View>
+        )}
+
+        {/* "Receipt Reset!" Confirmation Banner */}
+        {showResetConfirmationBanner && (
+          <Animated.View
+            style={[
+              styles.savedBanner, // Reuse style for positioning
+              {
+                opacity: resetConfirmationBannerOpacity,
+                backgroundColor: theme.green,
+              },
+            ]}
+          >
+            <Text style={[styles.savedBannerText, { color: theme.white }]}>
+              Receipt Reset!
+            </Text>
+          </Animated.View>
+        )}
+
         <ScrollView contentContainerStyle={styles.scrollContent}>
           {/* Top Buttons */}
           <View style={styles.topButtonsContainer}>
@@ -696,41 +755,6 @@ const Split: React.FC = () => {
               colors={colors}
             />
           </View>
-
-          {showResetBanner && (
-            <View
-              style={{
-                position: "absolute",
-                top: 0,
-                right: 0,
-                bottom: 0,
-                left: 0,
-                justifyContent: "center", // vertical center
-                alignItems: "center", // horizontal center
-                zIndex: 10,
-              }}
-              pointerEvents="none" // banner shouldn’t block taps
-            >
-              <View
-                style={{
-                  paddingVertical: 8,
-                  paddingHorizontal: 16,
-                  backgroundColor: "orange",
-                  borderRadius: 6,
-                }}
-              >
-                <Text
-                  style={{
-                    color: theme.black,
-                    fontWeight: "600",
-                    textAlign: "center",
-                  }}
-                >
-                  Tap reset again to confirm you want to reset this receipt
-                </Text>
-              </View>
-            </View>
-          )}
 
           {/* Receipt Name */}
           <View
