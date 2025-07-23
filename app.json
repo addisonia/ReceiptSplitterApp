@@ -2,7 +2,7 @@
   "expo": {
     "name": "ReceiptSplitter",
     "slug": "ReceiptSplitter",
-    "version": "1.0.5",
+    "version": "1.0.6",
     "orientation": "portrait",
     "icon": "./assets/images/receipt_icon.png",
     "scheme": "receiptsplitter",
@@ -14,7 +14,7 @@
     },
     "android": {
       "package": "org.receiptsplitter.app",
-      "versionCode": 5,
+      "versionCode": 6,
       "googleServicesFile": "./google-services.json",
       "adaptiveIcon": {
         "foregroundImage": "./assets/images/receipt_icon.png",
