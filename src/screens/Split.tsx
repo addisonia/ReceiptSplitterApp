@@ -1,5 +1,4 @@
 // src/screens/Split.tsx
-
 import React, { useState, useRef, useEffect } from "react";
 import {
   View,
@@ -23,15 +22,9 @@ import { auth, database } from "../firebase";
 import { ref, get, set } from "firebase/database";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { RootStackParamList } from "../types/RootStackParams";
-
-import {
-  colors,
-  offWhiteTheme,
-  yuckTheme,
-  darkTheme,
-  getRandomHexColor,
-} from "../components/ColorThemes";
+import { colors } from "../components/ColorThemes";
 import SettingsButton from "../components/SettingsButton";
+import { useTheme } from "../context/ThemeContext";
 
 type BuyerObject = {
   name: string;
@@ -66,10 +59,6 @@ type SplitState = {
   tax: number;
   items: ItemType[];
   settings: {
-    darkMode: boolean;
-    offWhiteMode: boolean;
-    yuckMode: boolean;
-    randomMode: boolean;
     splitTaxEvenly: boolean;
   };
 };
@@ -124,6 +113,7 @@ const checkboxStyles = StyleSheet.create({
 });
 
 const Split: React.FC = () => {
+  const { theme, mode } = useTheme();
   const navigation = useNavigation<any>();
   const route = useRoute<SplitRouteProp>();
   const { importedReceipt } = route.params || {};
@@ -135,12 +125,11 @@ const Split: React.FC = () => {
   const [itemNameInput, setItemNameInput] = useState<string>("");
   const [itemPriceInput, setItemPriceInput] = useState<string>("");
   const [items, setItems] = useState<ItemType[]>([]);
-
-  const [darkMode, setDarkMode] = useState<boolean>(false);
-  const [offWhiteMode, setOffWhiteMode] = useState<boolean>(false);
-  const [yuckMode, setYuckMode] = useState<boolean>(false);
-  const [randomMode, setRandomMode] = useState<boolean>(false);
   const [splitTaxEvenly, setSplitTaxEvenly] = useState<boolean>(true);
+
+  const [resetTapCount, setResetTapCount] = useState(0);
+  const resetTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const [showResetBanner, setShowResetBanner] = useState(false);
 
   const [isEditingReceiptName, setIsEditingReceiptName] =
     useState<boolean>(false);
@@ -153,15 +142,25 @@ const Split: React.FC = () => {
   const [showSavedBanner, setShowSavedBanner] = useState<boolean>(false);
   const [savedBannerOpacity] = useState<Animated.Value>(new Animated.Value(0));
 
-  // random mode theme
-  const [randomTheme, setRandomTheme] = useState<typeof colors>(colors);
+  const [showResetConfirmationBanner, setShowResetConfirmationBanner] =
+    useState<boolean>(false);
+  const [resetConfirmationBannerOpacity] = useState<Animated.Value>(
+    new Animated.Value(0)
+  );
 
   const [isInitialized, setIsInitialized] = useState<boolean>(false);
 
   const SPLIT_STORAGE_KEY: string = "@split_state";
   const importedReceiptUsed = useRef<boolean>(false);
 
-  // ----------------------------
+  const startResetTimer = () => {
+    if (resetTimerRef.current) clearTimeout(resetTimerRef.current);
+    resetTimerRef.current = setTimeout(() => {
+      setResetTapCount(0);
+      setShowResetBanner(false);
+    }, 7000); // 7 seconds
+  };
+
   // Initial load from cache (runs once)
   useEffect(() => {
     const initializeSplit = async () => {
@@ -173,10 +172,6 @@ const Split: React.FC = () => {
           tax: 0,
           items: [],
           settings: {
-            darkMode: false,
-            offWhiteMode: false,
-            yuckMode: false,
-            randomMode: false,
             splitTaxEvenly: true,
           },
         };
@@ -185,12 +180,8 @@ const Split: React.FC = () => {
           initialSplitState = JSON.parse(storedData);
         }
 
-        // Always apply theme settings from cache on initial mount
+        // Apply splitTaxEvenly from cache
         if (initialSplitState.settings) {
-          setDarkMode(initialSplitState.settings.darkMode ?? false);
-          setOffWhiteMode(initialSplitState.settings.offWhiteMode ?? false);
-          setYuckMode(initialSplitState.settings.yuckMode ?? false);
-          setRandomMode(initialSplitState.settings.randomMode ?? false);
           setSplitTaxEvenly(initialSplitState.settings.splitTaxEvenly ?? true);
         }
 
@@ -223,12 +214,6 @@ const Split: React.FC = () => {
           setTax(importedReceipt.tax || 0);
           importedReceiptUsed.current = true;
           navigation.setParams({ importedReceipt: undefined });
-          // console.log("Initial Imported Receipt Applied:", {
-          //   receiptName: importedReceipt.name,
-          //   buyers: importedReceipt.buyers,
-          //   items: safeItems,
-          //   tax: importedReceipt.tax,
-          // });
         }
       } catch (error) {
         console.log("Error during initialization:", error);
@@ -238,9 +223,9 @@ const Split: React.FC = () => {
     };
 
     initializeSplit();
-  }, []); // Empty dependency array for initial mount only
+  }, []);
 
-  // Handle subsequent imported receipts (e.g., from chat.tsx or importreceipts.tsx)
+  // Handle subsequent imported receipts
   useEffect(() => {
     if (importedReceipt && !importedReceiptUsed.current) {
       const safeItems = (importedReceipt.items ?? []).map((it: ItemType) => {
@@ -260,16 +245,10 @@ const Split: React.FC = () => {
       setTax(importedReceipt.tax || 0);
       importedReceiptUsed.current = true;
       navigation.setParams({ importedReceipt: undefined });
-      // console.log("Dynamic Imported Receipt Applied:", {
-      //   receiptName: importedReceipt.name,
-      //   buyers: importedReceipt.buyers,
-      //   items: safeItems,
-      //   tax: importedReceipt.tax,
-      // });
     }
-  }, [route.params?.importedReceipt, navigation]); // Re-run when importedReceipt changes, no theme reset
+  }, [route.params?.importedReceipt, navigation]);
 
-  // Save on blur (unchanged, but ensures theme persists)
+  // Save on blur
   useEffect(() => {
     const unsubscribe = navigation.addListener("blur", async () => {
       try {
@@ -279,10 +258,6 @@ const Split: React.FC = () => {
           tax,
           items,
           settings: {
-            darkMode,
-            offWhiteMode,
-            yuckMode,
-            randomMode,
             splitTaxEvenly,
           },
         };
@@ -295,79 +270,22 @@ const Split: React.FC = () => {
       }
     });
     return unsubscribe;
-  }, [
-    navigation,
-    receiptName,
-    buyers,
-    tax,
-    items,
-    darkMode,
-    offWhiteMode,
-    yuckMode,
-    randomMode,
-    splitTaxEvenly,
-  ]);
+  }, [navigation, receiptName, buyers, tax, items, splitTaxEvenly]);
 
-  // ----------------------------
-  // Random Colors effect
-  // ----------------------------
-  useEffect(() => {
-    let intervalId: NodeJS.Timeout;
-    if (randomMode) {
-      intervalId = setInterval(() => {
-        setRandomTheme({
-          white: getRandomHexColor(),
-          offWhite: getRandomHexColor(),
-          offWhite2: getRandomHexColor(),
-          lightGray: getRandomHexColor(),
-          lightGray2: getRandomHexColor(),
-          yellow: getRandomHexColor(),
-          green: getRandomHexColor(),
-          yuck: getRandomHexColor(),
-          yuckLight: getRandomHexColor(),
-          blood: getRandomHexColor(),
-          orange: getRandomHexColor(),
-          gray1: getRandomHexColor(),
-          black: getRandomHexColor(),
-          textDefault: getRandomHexColor(),
-          extraYuckLight: getRandomHexColor(),
-        });
-      }, 1000);
-    }
-    return () => {
-      if (intervalId) clearInterval(intervalId);
-    };
-  }, [randomMode]);
-
-  // determine current theme
-  const currentTheme = randomMode
-    ? randomTheme
-    : yuckMode
-    ? yuckTheme
-    : offWhiteMode
-    ? offWhiteTheme
-    : darkMode
-    ? darkTheme
-    : colors;
-
-  // text color logic
-  const nonButtonTextColor = yuckMode
-    ? currentTheme.extraYuckLight
-    : darkMode
-    ? currentTheme.textDefault
-    : currentTheme.black;
+  const nonButtonTextColor =
+    mode === "yuck"
+      ? theme.extraYuckLight
+      : mode === "dark"
+      ? theme.textDefault
+      : theme.black;
 
   const effectiveImportButtonColor =
-    randomMode || offWhiteMode || yuckMode || darkMode
-      ? currentTheme.yellow
-      : importButtonColor;
+    mode !== "default" ? theme.yellow : importButtonColor;
 
   const effectiveSaveButtonColor =
-    randomMode || offWhiteMode || yuckMode || darkMode
-      ? currentTheme.yellow
-      : saveButtonColor;
+    mode !== "default" ? theme.yellow : saveButtonColor;
 
-  // banner animations
+  // Banner animations
   const fadeOutBanner = () => {
     setTimeout(() => {
       Animated.timing(bannerOpacity, {
@@ -402,7 +320,27 @@ const Split: React.FC = () => {
     });
   };
 
-  // handlers
+  const showReceiptResetBanner = () => {
+    setShowResetConfirmationBanner(true);
+    resetConfirmationBannerOpacity.setValue(0);
+    Animated.timing(resetConfirmationBannerOpacity, {
+      toValue: 1,
+      duration: 300,
+      useNativeDriver: true,
+    }).start(() => {
+      setTimeout(() => {
+        Animated.timing(resetConfirmationBannerOpacity, {
+          toValue: 0,
+          duration: 300,
+          useNativeDriver: true,
+        }).start(() => {
+          setShowResetConfirmationBanner(false);
+        });
+      }, 1500);
+    });
+  };
+
+  // Handlers
   const handleSaveReceipt = async () => {
     if (!auth.currentUser) {
       setShowSignInBanner(true);
@@ -414,8 +352,8 @@ const Split: React.FC = () => {
       }).start(fadeOutBanner);
       return;
     }
-    setSaveButtonColor(currentTheme.green);
-    setTimeout(() => setSaveButtonColor(currentTheme.yellow), 100);
+    setSaveButtonColor(theme.green);
+    setTimeout(() => setSaveButtonColor(theme.yellow), 100);
     try {
       const userId = auth.currentUser.uid;
       let finalReceiptName = receiptName.trim() || "untitled receipt";
@@ -444,8 +382,8 @@ const Split: React.FC = () => {
       showReceiptSavedBanner();
     } catch (error) {
       console.log("save error:", error);
-      setSaveButtonColor(currentTheme.yellow);
-      Alert.alert("Error", "failed to save receipt.");
+      setSaveButtonColor(theme.yellow);
+      Alert.alert("Error", "failed to save receipt. Try re-opening the app.");
     }
   };
 
@@ -615,6 +553,26 @@ const Split: React.FC = () => {
     setTax(0);
   };
 
+  const confirmOrClearData = () => {
+    if (resetTapCount === 0) {
+      // first tap – ask for confirmation
+      setResetTapCount(1);
+      setShowResetBanner(true);
+      startResetTimer();
+      return;
+    }
+
+    // second tap within 7s – actually reset
+    if (resetTimerRef.current) clearTimeout(resetTimerRef.current);
+    setResetTapCount(0);
+    setShowResetBanner(false);
+
+    // existing clear logic
+    handleClearData();
+    // show confirmation banner
+    showReceiptResetBanner();
+  };
+
   const goHome = () => {
     navigation.navigate("MainTabs", { screen: "Home" });
   };
@@ -642,26 +600,22 @@ const Split: React.FC = () => {
     );
   }
 
-  // checkmark color for editing receipt name
-  const checkmarkColor = darkMode
-    ? currentTheme.textDefault
-    : yuckMode
-    ? currentTheme.black
-    : currentTheme.black;
-
-  // revert the displayed name color in yuck theme to extraYuckLight
-  const displayReceiptNameColor = yuckMode
-    ? currentTheme.extraYuckLight
-    : nonButtonTextColor;
+  const checkmarkColor = mode === "dark" ? theme.textDefault : theme.black;
+  const displayReceiptNameColor =
+    mode === "yuck" ? theme.extraYuckLight : nonButtonTextColor;
 
   return (
-    <SafeAreaView style={{ flex: 1, backgroundColor: currentTheme.offWhite2 }}>
-      <StatusBar backgroundColor="#000000" barStyle="light-content" />
+    <SafeAreaView style={{ flex: 1, backgroundColor: theme.offWhite2 }}>
+      <StatusBar
+        barStyle="light-content"
+        backgroundColor={theme.offWhite2}
+        translucent={Platform.OS === "android"}
+      />
       <KeyboardAvoidingView
         style={[
           styles.container,
-          darkMode ? darkStyles.container : null,
-          { backgroundColor: currentTheme.offWhite2 },
+          mode === "dark" ? darkStyles.container : null,
+          { backgroundColor: theme.offWhite2 },
         ]}
         behavior={Platform.OS === "ios" ? "padding" : undefined}
       >
@@ -673,9 +627,7 @@ const Split: React.FC = () => {
               { opacity: bannerOpacity, backgroundColor: "red" },
             ]}
           >
-            <Text
-              style={[styles.signInBannerText, { color: currentTheme.white }]}
-            >
+            <Text style={[styles.signInBannerText, { color: theme.white }]}>
               {importButtonColor === "red"
                 ? "Sign In To Import Receipts"
                 : "Sign In To Save Receipts"}
@@ -690,14 +642,43 @@ const Split: React.FC = () => {
               styles.savedBanner,
               {
                 opacity: savedBannerOpacity,
-                backgroundColor: currentTheme.green,
+                backgroundColor: theme.green,
               },
             ]}
           >
-            <Text
-              style={[styles.savedBannerText, { color: currentTheme.white }]}
-            >
+            <Text style={[styles.savedBannerText, { color: theme.white }]}>
               Receipt Saved
+            </Text>
+          </Animated.View>
+        )}
+
+        {/* Reset Warning Banner */}
+        {showResetBanner && (
+          <View
+            style={[
+              styles.savedBanner, // Reuse style for positioning
+              { backgroundColor: "orange" },
+            ]}
+          >
+            <Text style={[styles.savedBannerText, { color: theme.black }]}>
+              Tap reset again to confirm you want to reset this receipt
+            </Text>
+          </View>
+        )}
+
+        {/* "Receipt Reset!" Confirmation Banner */}
+        {showResetConfirmationBanner && (
+          <Animated.View
+            style={[
+              styles.savedBanner, // Reuse style for positioning
+              {
+                opacity: resetConfirmationBannerOpacity,
+                backgroundColor: theme.green,
+              },
+            ]}
+          >
+            <Text style={[styles.savedBannerText, { color: theme.white }]}>
+              Receipt Reset!
             </Text>
           </Animated.View>
         )}
@@ -710,7 +691,7 @@ const Split: React.FC = () => {
                 <FontAwesome5
                   name="home"
                   size={24}
-                  color={pressed ? currentTheme.green : currentTheme.yellow}
+                  color={pressed ? theme.green : theme.yellow}
                 />
               )}
             </Pressable>
@@ -721,18 +702,16 @@ const Split: React.FC = () => {
                   styles.topButton,
                   {
                     backgroundColor: pressed
-                      ? currentTheme.lightGray
+                      ? theme.lightGray
                       : effectiveImportButtonColor,
                     borderWidth: 1,
-                    borderColor: currentTheme.black,
+                    borderColor: theme.black,
                     paddingHorizontal: 10,
                   },
                 ]}
                 onPress={handleImportReceipt}
               >
-                <Text
-                  style={[styles.buttonText, { color: currentTheme.black }]}
-                >
+                <Text style={[styles.buttonText, { color: theme.black }]}>
                   Import
                 </Text>
               </Pressable>
@@ -742,53 +721,35 @@ const Split: React.FC = () => {
                   styles.topButton,
                   {
                     backgroundColor: pressed
-                      ? currentTheme.lightGray
+                      ? theme.lightGray
                       : effectiveSaveButtonColor,
                     borderWidth: 1,
-                    borderColor: currentTheme.black,
+                    borderColor: theme.black,
                     paddingHorizontal: 10,
                     marginHorizontal: 10,
                   },
                 ]}
                 onPress={handleSaveReceipt}
               >
-                <Text
-                  style={[styles.buttonText, { color: currentTheme.black }]}
-                >
+                <Text style={[styles.buttonText, { color: theme.black }]}>
                   Save
                 </Text>
               </Pressable>
-
               <Pressable
                 style={({ pressed }) => [
                   styles.topButton,
                   styles.clearDataButton,
-                  {
-                    backgroundColor: pressed
-                      ? currentTheme.green
-                      : currentTheme.yellow,
-                  },
+                  { backgroundColor: pressed ? theme.green : theme.yellow },
                 ]}
-                onPress={handleClearData}
+                onPress={confirmOrClearData} // <<<  changed
               >
-                <Text
-                  style={[styles.buttonText, { color: currentTheme.black }]}
-                >
+                <Text style={[styles.buttonText, { color: theme.black }]}>
                   Reset
                 </Text>
               </Pressable>
             </View>
 
             <SettingsButton
-              currentTheme={currentTheme}
-              darkMode={darkMode}
-              setDarkMode={setDarkMode}
-              offWhiteMode={offWhiteMode}
-              setOffWhiteMode={setOffWhiteMode}
-              yuckMode={yuckMode}
-              setYuckMode={setYuckMode}
-              randomMode={randomMode}
-              setRandomMode={setRandomMode}
               splitTaxEvenly={splitTaxEvenly}
               setSplitTaxEvenly={setSplitTaxEvenly}
               colors={colors}
@@ -799,10 +760,10 @@ const Split: React.FC = () => {
           <View
             style={[
               styles.receiptNameContainer,
-              darkMode
+              mode === "dark"
                 ? darkStyles.receiptNameContainer
-                : { backgroundColor: currentTheme.lightGray2 },
-              offWhiteMode && { backgroundColor: currentTheme.offWhite2 },
+                : { backgroundColor: theme.lightGray2 },
+              mode === "offWhite" && { backgroundColor: theme.offWhite2 },
             ]}
           >
             {isEditingReceiptName ? (
@@ -814,15 +775,13 @@ const Split: React.FC = () => {
                       {
                         width: "80%",
                         textAlign: "center",
-                        color: yuckMode
-                          ? currentTheme.black
-                          : nonButtonTextColor,
-                        borderColor: currentTheme.gray1,
-                        backgroundColor: yuckMode
-                          ? currentTheme.extraYuckLight
-                          : undefined,
+                        color:
+                          mode === "yuck" ? theme.black : nonButtonTextColor,
+                        borderColor: theme.gray1,
+                        backgroundColor:
+                          mode === "yuck" ? theme.extraYuckLight : undefined,
                       },
-                      darkMode ? darkStyles.inputField : null,
+                      mode === "dark" ? darkStyles.inputField : null,
                     ]}
                     value={receiptName}
                     onChangeText={setReceiptName}
@@ -871,9 +830,7 @@ const Split: React.FC = () => {
                   <FontAwesome5
                     name="pencil-alt"
                     size={20}
-                    color={
-                      darkMode ? currentTheme.textDefault : currentTheme.black
-                    }
+                    color={mode === "dark" ? theme.textDefault : theme.black}
                   />
                 </TouchableOpacity>
               </View>
@@ -886,9 +843,9 @@ const Split: React.FC = () => {
               style={[
                 styles.formContainer,
                 styles.buyersForm,
-                darkMode
+                mode === "dark"
                   ? darkStyles.buyersForm
-                  : { backgroundColor: currentTheme.lightGray },
+                  : { backgroundColor: theme.lightGray },
               ]}
             >
               <Text
@@ -906,16 +863,15 @@ const Split: React.FC = () => {
                   {
                     width: "75%",
                     textAlign: "center",
-                    backgroundColor: yuckMode
-                      ? currentTheme.extraYuckLight
-                      : currentTheme.offWhite2,
-                    color: yuckMode ? currentTheme.black : currentTheme.black,
-                    borderColor: currentTheme.gray1,
+                    backgroundColor:
+                      mode === "yuck" ? theme.extraYuckLight : theme.offWhite2,
+                    color: mode === "yuck" ? theme.black : theme.black,
+                    borderColor: theme.gray1,
                   },
-                  darkMode ? darkStyles.inputField : null,
+                  mode === "dark" ? darkStyles.inputField : null,
                 ]}
                 placeholder="Enter a buyer"
-                placeholderTextColor={darkMode ? "#999" : currentTheme.black}
+                placeholderTextColor={mode === "dark" ? "#999" : theme.black}
                 value={buyerNameInput}
                 onChangeText={setBuyerNameInput}
                 onSubmitEditing={handleAddBuyer}
@@ -929,9 +885,7 @@ const Split: React.FC = () => {
                   styles.addBuyersTaxButtons,
                   {
                     width: "75%",
-                    backgroundColor: pressed
-                      ? currentTheme.green
-                      : currentTheme.yellow,
+                    backgroundColor: pressed ? theme.green : theme.yellow,
                   },
                 ]}
               >
@@ -943,9 +897,9 @@ const Split: React.FC = () => {
               style={[
                 styles.formContainer,
                 styles.taxForm,
-                darkMode
+                mode === "dark"
                   ? darkStyles.taxForm
-                  : { backgroundColor: currentTheme.lightGray },
+                  : { backgroundColor: theme.lightGray },
               ]}
             >
               <Text
@@ -961,16 +915,15 @@ const Split: React.FC = () => {
                   styles.inputField,
                   {
                     width: "75%",
-                    backgroundColor: yuckMode
-                      ? currentTheme.extraYuckLight
-                      : currentTheme.offWhite2,
-                    color: yuckMode ? currentTheme.black : currentTheme.black,
-                    borderColor: currentTheme.gray1,
+                    backgroundColor:
+                      mode === "yuck" ? theme.extraYuckLight : theme.offWhite2,
+                    color: mode === "yuck" ? theme.black : theme.black,
+                    borderColor: theme.gray1,
                   },
-                  darkMode ? darkStyles.inputField : null,
+                  mode === "dark" ? darkStyles.inputField : null,
                 ]}
                 placeholder="0.00"
-                placeholderTextColor={darkMode ? "#999" : currentTheme.black}
+                placeholderTextColor={mode === "dark" ? "#999" : theme.black}
                 keyboardType="numeric"
                 value={taxInput}
                 onChangeText={setTaxInput}
@@ -985,9 +938,7 @@ const Split: React.FC = () => {
                   styles.addBuyersTaxButtons,
                   {
                     width: "75%",
-                    backgroundColor: pressed
-                      ? currentTheme.green
-                      : currentTheme.yellow,
+                    backgroundColor: pressed ? theme.green : theme.yellow,
                   },
                 ]}
               >
@@ -1000,9 +951,9 @@ const Split: React.FC = () => {
           <View
             style={[
               styles.itemForm,
-              { backgroundColor: currentTheme.lightGray2 },
-              offWhiteMode && { backgroundColor: currentTheme.lightGray },
-              darkMode ? darkStyles.itemForm : null,
+              { backgroundColor: theme.lightGray2 },
+              mode === "offWhite" && { backgroundColor: theme.lightGray },
+              mode === "dark" ? darkStyles.itemForm : null,
             ]}
           >
             <View style={[styles.itemInputRow, { justifyContent: "center" }]}>
@@ -1015,17 +966,19 @@ const Split: React.FC = () => {
                   styles.inputField,
                   styles.itemInput,
                   {
-                    backgroundColor: yuckMode
-                      ? currentTheme.extraYuckLight
-                      : darkMode
-                      ? "#1e1e1e"
-                      : currentTheme.offWhite2,
-                    color: yuckMode
-                      ? currentTheme.black
-                      : darkMode
-                      ? "#ffffff"
-                      : currentTheme.black,
-                    borderColor: currentTheme.gray1,
+                    backgroundColor:
+                      mode === "yuck"
+                        ? theme.extraYuckLight
+                        : mode === "dark"
+                        ? "#1e1e1e"
+                        : theme.offWhite2,
+                    color:
+                      mode === "yuck"
+                        ? theme.black
+                        : mode === "dark"
+                        ? "#ffffff"
+                        : theme.black,
+                    borderColor: theme.gray1,
                   },
                 ]}
                 value={itemNameInput}
@@ -1046,17 +999,19 @@ const Split: React.FC = () => {
                   styles.inputField,
                   styles.itemInput,
                   {
-                    backgroundColor: yuckMode
-                      ? currentTheme.extraYuckLight
-                      : darkMode
-                      ? "#1e1e1e"
-                      : currentTheme.offWhite2,
-                    color: yuckMode
-                      ? currentTheme.black
-                      : darkMode
-                      ? "#ffffff"
-                      : currentTheme.black,
-                    borderColor: currentTheme.gray1,
+                    backgroundColor:
+                      mode === "yuck"
+                        ? theme.extraYuckLight
+                        : mode === "dark"
+                        ? "#1e1e1e"
+                        : theme.offWhite2,
+                    color:
+                      mode === "yuck"
+                        ? theme.black
+                        : mode === "dark"
+                        ? "#ffffff"
+                        : theme.black,
+                    borderColor: theme.gray1,
                   },
                 ]}
                 value={itemPriceInput}
@@ -1079,9 +1034,7 @@ const Split: React.FC = () => {
                 styles.borderBlack,
                 {
                   width: "70%",
-                  backgroundColor: pressed
-                    ? currentTheme.green
-                    : currentTheme.yellow,
+                  backgroundColor: pressed ? theme.green : theme.yellow,
                 },
               ]}
             >
@@ -1123,7 +1076,10 @@ const Split: React.FC = () => {
 
           {/* Grid Titles */}
           <View
-            style={[styles.gridTitles, darkMode ? darkStyles.gridTitles : null]}
+            style={[
+              styles.gridTitles,
+              mode === "dark" ? darkStyles.gridTitles : null,
+            ]}
           >
             <Text
               style={[
@@ -1131,7 +1087,7 @@ const Split: React.FC = () => {
                 styles.firstGridCell,
                 styles.gridTitleText,
                 { flex: 1, color: nonButtonTextColor },
-                darkMode ? darkStyles.gridCell : null,
+                mode === "dark" ? darkStyles.gridCell : null,
               ]}
             >
               Item
@@ -1141,7 +1097,7 @@ const Split: React.FC = () => {
                 styles.gridCell,
                 styles.gridTitleText,
                 { flex: 0.5, color: nonButtonTextColor },
-                darkMode ? darkStyles.gridCell : null,
+                mode === "dark" ? darkStyles.gridCell : null,
               ]}
             >
               Price
@@ -1151,7 +1107,7 @@ const Split: React.FC = () => {
                 styles.gridCell,
                 styles.gridTitleText,
                 { flex: 0.4, color: nonButtonTextColor },
-                darkMode ? darkStyles.gridCell : null,
+                mode === "dark" ? darkStyles.gridCell : null,
               ]}
             >
               Qty
@@ -1161,7 +1117,7 @@ const Split: React.FC = () => {
                 styles.gridCell,
                 styles.gridTitleText,
                 { flex: 1.1, color: nonButtonTextColor },
-                darkMode ? darkStyles.gridCell : null,
+                mode === "dark" ? darkStyles.gridCell : null,
               ]}
             >
               Buyers
@@ -1172,14 +1128,17 @@ const Split: React.FC = () => {
           {items.map((item, itemIndex) => (
             <View
               key={itemIndex}
-              style={[styles.gridRow, darkMode ? darkStyles.gridRow : null]}
+              style={[
+                styles.gridRow,
+                mode === "dark" ? darkStyles.gridRow : null,
+              ]}
             >
               <View
                 style={[
                   styles.gridCell,
                   styles.firstGridCell,
                   { flex: 1 },
-                  darkMode ? darkStyles.gridCell : null,
+                  mode === "dark" ? darkStyles.gridCell : null,
                 ]}
               >
                 <View style={styles.cellInner}>
@@ -1191,12 +1150,7 @@ const Split: React.FC = () => {
                     }
                     style={styles.trashIcon}
                   >
-                    {/* less bright red for dark mode => currentTheme.blood */}
-                    <FontAwesome5
-                      name="trash"
-                      size={16}
-                      color={currentTheme.blood}
-                    />
+                    <FontAwesome5 name="trash" size={16} color={theme.blood} />
                   </TouchableOpacity>
                   <Text
                     style={[styles.itemNameText, { color: nonButtonTextColor }]}
@@ -1209,7 +1163,7 @@ const Split: React.FC = () => {
                 style={[
                   styles.gridCell,
                   { flex: 0.5 },
-                  darkMode ? darkStyles.gridCell : null,
+                  mode === "dark" ? darkStyles.gridCell : null,
                 ]}
               >
                 <View style={styles.cellInner}>
@@ -1222,7 +1176,7 @@ const Split: React.FC = () => {
                 style={[
                   styles.gridCell,
                   { flex: 0.4 },
-                  darkMode ? darkStyles.gridCell : null,
+                  mode === "dark" ? darkStyles.gridCell : null,
                 ]}
               >
                 <View style={styles.cellInner}>
@@ -1230,23 +1184,26 @@ const Split: React.FC = () => {
                     style={[
                       styles.quantityInput,
                       {
-                        backgroundColor: yuckMode
-                          ? currentTheme.yuck
-                          : darkMode
-                          ? "#333333"
-                          : currentTheme.offWhite2,
-                        borderColor: yuckMode
-                          ? currentTheme.extraYuckLight
-                          : darkMode
-                          ? "#555555"
-                          : currentTheme.gray1,
-                        color: yuckMode
-                          ? currentTheme.extraYuckLight
-                          : darkMode
-                          ? "#ffffff"
-                          : currentTheme.black,
+                        backgroundColor:
+                          mode === "yuck"
+                            ? theme.yuck
+                            : mode === "dark"
+                            ? "#333333"
+                            : theme.offWhite2,
+                        borderColor:
+                          mode === "yuck"
+                            ? theme.extraYuckLight
+                            : mode === "dark"
+                            ? "#555555"
+                            : theme.gray1,
+                        color:
+                          mode === "yuck"
+                            ? theme.extraYuckLight
+                            : mode === "dark"
+                            ? "#ffffff"
+                            : theme.black,
                       },
-                      darkMode ? darkStyles.quantityInput : null,
+                      mode === "dark" ? darkStyles.quantityInput : null,
                     ]}
                     keyboardType="numeric"
                     value={
@@ -1270,7 +1227,7 @@ const Split: React.FC = () => {
                 style={[
                   styles.gridCell,
                   { flex: 1.1 },
-                  darkMode ? darkStyles.gridCell : null,
+                  mode === "dark" ? darkStyles.gridCell : null,
                 ]}
               >
                 <View style={styles.cellInner}>
@@ -1297,7 +1254,7 @@ const Split: React.FC = () => {
                                 qtyIndex
                               )
                             }
-                            theme={currentTheme}
+                            theme={theme}
                           />
                           <Text
                             style={[
@@ -1494,7 +1451,6 @@ const styles = StyleSheet.create({
     flexWrap: "wrap",
   },
   cellInner: {
-    // center vertically
     flex: 1,
     justifyContent: "center",
     alignItems: "center",
@@ -1502,7 +1458,6 @@ const styles = StyleSheet.create({
     position: "relative",
   },
   itemNameText: {
-    // keep the text from overlapping the trash icon
     marginLeft: 25,
     flexWrap: "wrap",
   },

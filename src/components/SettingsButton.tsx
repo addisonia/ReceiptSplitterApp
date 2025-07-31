@@ -1,6 +1,5 @@
 // src/components/SettingsButton.tsx
-
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import {
   View,
   Text,
@@ -9,86 +8,115 @@ import {
   Pressable,
   TouchableWithoutFeedback,
   StyleSheet,
+  StatusBar,
 } from "react-native";
 import { FontAwesome5 } from "@expo/vector-icons";
-import { useEffect } from "react";
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import { useTheme } from "../context/ThemeContext";
 
 type SettingsButtonProps = {
-  currentTheme: any;
-  darkMode: boolean;
-  setDarkMode: (val: boolean) => void;
-  offWhiteMode: boolean;
-  setOffWhiteMode: (val: boolean) => void;
-  yuckMode: boolean;
-  setYuckMode: (val: boolean) => void;
-  randomMode: boolean;
-  setRandomMode: (val: boolean) => void;
   splitTaxEvenly: boolean;
   setSplitTaxEvenly: (val: boolean) => void;
-  colors: any;
+  colors: any; // You might not need this anymore if all colors come from ThemeContext
 };
 
 const SettingsButton: React.FC<SettingsButtonProps> = ({
-  currentTheme,
-  darkMode,
-  setDarkMode,
-  offWhiteMode,
-  setOffWhiteMode,
-  yuckMode,
-  setYuckMode,
-  randomMode,
-  setRandomMode,
   splitTaxEvenly,
   setSplitTaxEvenly,
   colors,
 }) => {
+  const { theme, mode, setThemeMode } = useTheme();
   const [showSettings, setShowSettings] = useState(false);
 
+  // Load initial theme setting (optional, since ThemeContext handles defaults)
   useEffect(() => {
     const loadThemeSetting = async () => {
       try {
-        const themeChanged = await AsyncStorage.getItem("themeChanged"); // Check if user changed a theme before
-        const cachedYuckMode = await AsyncStorage.getItem("yuckMode");
-        const cachedDarkMode = await AsyncStorage.getItem("darkMode");
-        const cachedOffWhiteMode = await AsyncStorage.getItem("offWhiteMode");
-        const cachedRandomMode = await AsyncStorage.getItem("randomMode");
-  
-        // If user has changed the theme before, do nothing
-        if (themeChanged) return;
-  
-        // If no themes are set, default to Yuck Mode and mark the theme as changed
-        if (!cachedYuckMode && !cachedDarkMode && !cachedOffWhiteMode && !cachedRandomMode) {
-          setYuckMode(true);
-          await AsyncStorage.setItem("themeChanged", "true"); // Prevent defaulting again
+        const themeChanged = await AsyncStorage.getItem("themeChanged");
+        if (!themeChanged) {
+          setThemeMode("yuck"); // Default to yuck mode if no theme has been set
+          await AsyncStorage.setItem("themeChanged", "true");
         }
       } catch (error) {
         console.error("Error loading theme setting:", error);
       }
     };
-  
-    loadThemeSetting();
-  }, []);
-  
-  
 
+    loadThemeSetting();
+  }, [setThemeMode]);
+
+  // Update StatusBar based on modal visibility and theme mode
+  useEffect(() => {
+    if (showSettings) {
+      StatusBar.setBarStyle("light-content");
+    } else {
+      const barStyle =
+        mode === "dark" || mode === "yuck" || mode === "random"
+          ? "light-content"
+          : "dark-content";
+      StatusBar.setBarStyle(barStyle);
+      StatusBar.setBackgroundColor(theme.offWhite2);
+    }
+  }, [showSettings, mode, theme.offWhite2]);
+
+  // Determine modal colors based on theme mode
   let modalBackgroundColor = "#ffffff";
   let modalTextColor = "#000000";
 
-  if (randomMode) {
-    modalBackgroundColor = currentTheme.offWhite;
-    modalTextColor = currentTheme.textDefault;
-  } else if (darkMode) {
-    // dark grey background, off-white text
-    modalBackgroundColor = currentTheme.offWhite2;
-    modalTextColor = currentTheme.textDefault;
-  } else if (offWhiteMode) {
-    modalBackgroundColor = currentTheme.offWhite2;
-    modalTextColor = currentTheme.black;
-  } else if (yuckMode) {
-    modalBackgroundColor = currentTheme.yuckLight;
-    modalTextColor = currentTheme.black;
+  switch (mode) {
+    case "random":
+      modalBackgroundColor = theme.offWhite;
+      modalTextColor = theme.textDefault;
+      break;
+    case "dark":
+      modalBackgroundColor = theme.offWhite2;
+      modalTextColor = theme.textDefault;
+      break;
+    case "offWhite":
+      modalBackgroundColor = theme.offWhite2;
+      modalTextColor = theme.black;
+      break;
+    case "yuck":
+      modalBackgroundColor = theme.yuckLight;
+      modalTextColor = theme.black;
+      break;
+    default:
+      modalBackgroundColor = colors.offWhite;
+      modalTextColor = colors.black;
   }
+
+  // Theme toggle handlers
+  const toggleDarkMode = (value: boolean) => {
+    if (value) {
+      setThemeMode("dark");
+    } else if (mode === "dark") {
+      setThemeMode("default");
+    }
+  };
+
+  const toggleOffWhiteMode = (value: boolean) => {
+    if (value) {
+      setThemeMode("offWhite");
+    } else if (mode === "offWhite") {
+      setThemeMode("default");
+    }
+  };
+
+  const toggleYuckMode = (value: boolean) => {
+    if (value) {
+      setThemeMode("yuck");
+    } else if (mode === "yuck") {
+      setThemeMode("default");
+    }
+  };
+
+  const toggleRandomMode = (value: boolean) => {
+    if (value) {
+      setThemeMode("random");
+    } else if (mode === "random") {
+      setThemeMode("default");
+    }
+  };
 
   return (
     <>
@@ -97,7 +125,7 @@ const SettingsButton: React.FC<SettingsButtonProps> = ({
           <FontAwesome5
             name="cog"
             size={24}
-            color={pressed ? currentTheme.green : currentTheme.yellow}
+            color={pressed ? theme.green : theme.yellow}
           />
         )}
       </Pressable>
@@ -123,24 +151,11 @@ const SettingsButton: React.FC<SettingsButtonProps> = ({
                   >
                     Dark Theme
                   </Text>
-                  {/* set trackColor, thumbColor for dark mode toggles to show offwhite instead of pure white */}
                   <Switch
-                    value={darkMode}
-                    trackColor={{
-                      false: modalTextColor,
-                      true: currentTheme.green,
-                    }}
-                    thumbColor={darkMode ? currentTheme.textDefault : "#f4f3f4"}
-                    onValueChange={(value: boolean) => {
-                      if (value) {
-                        setDarkMode(true);
-                        setOffWhiteMode(false);
-                        setYuckMode(false);
-                        setRandomMode(false);
-                      } else {
-                        setDarkMode(false);
-                      }
-                    }}
+                    value={mode === "dark"}
+                    trackColor={{ false: modalTextColor, true: theme.green }}
+                    thumbColor={mode === "dark" ? theme.textDefault : "#f4f3f4"}
+                    onValueChange={toggleDarkMode}
                   />
                 </View>
 
@@ -151,24 +166,12 @@ const SettingsButton: React.FC<SettingsButtonProps> = ({
                     Off White Theme
                   </Text>
                   <Switch
-                    value={offWhiteMode}
-                    trackColor={{
-                      false: modalTextColor,
-                      true: currentTheme.green,
-                    }}
+                    value={mode === "offWhite"}
+                    trackColor={{ false: modalTextColor, true: theme.green }}
                     thumbColor={
-                      offWhiteMode ? currentTheme.textDefault : "#f4f3f4"
+                      mode === "offWhite" ? theme.textDefault : "#f4f3f4"
                     }
-                    onValueChange={(value: boolean) => {
-                      if (value) {
-                        setOffWhiteMode(true);
-                        setDarkMode(false);
-                        setYuckMode(false);
-                        setRandomMode(false);
-                      } else {
-                        setOffWhiteMode(false);
-                      }
-                    }}
+                    onValueChange={toggleOffWhiteMode}
                   />
                 </View>
 
@@ -179,22 +182,10 @@ const SettingsButton: React.FC<SettingsButtonProps> = ({
                     Yuck Theme
                   </Text>
                   <Switch
-                    value={yuckMode}
-                    trackColor={{
-                      false: modalTextColor,
-                      true: currentTheme.green,
-                    }}
-                    thumbColor={yuckMode ? currentTheme.black : "#f4f3f4"}
-                    onValueChange={(value: boolean) => {
-                      if (value) {
-                        setYuckMode(true);
-                        setDarkMode(false);
-                        setOffWhiteMode(false);
-                        setRandomMode(false);
-                      } else {
-                        setYuckMode(false);
-                      }
-                    }}
+                    value={mode === "yuck"}
+                    trackColor={{ false: modalTextColor, true: theme.green }}
+                    thumbColor={mode === "yuck" ? theme.black : "#f4f3f4"}
+                    onValueChange={toggleYuckMode}
                   />
                 </View>
 
@@ -205,24 +196,12 @@ const SettingsButton: React.FC<SettingsButtonProps> = ({
                     Random Colors
                   </Text>
                   <Switch
-                    value={randomMode}
-                    trackColor={{
-                      false: modalTextColor,
-                      true: currentTheme.green,
-                    }}
+                    value={mode === "random"}
+                    trackColor={{ false: modalTextColor, true: theme.green }}
                     thumbColor={
-                      randomMode ? currentTheme.textDefault : "#f4f3f4"
+                      mode === "random" ? theme.textDefault : "#f4f3f4"
                     }
-                    onValueChange={(value: boolean) => {
-                      if (value) {
-                        setRandomMode(true);
-                        setDarkMode(false);
-                        setOffWhiteMode(false);
-                        setYuckMode(false);
-                      } else {
-                        setRandomMode(false);
-                      }
-                    }}
+                    onValueChange={toggleRandomMode}
                   />
                 </View>
 
@@ -239,14 +218,9 @@ const SettingsButton: React.FC<SettingsButtonProps> = ({
                   </Text>
                   <Switch
                     value={splitTaxEvenly}
-                    trackColor={{
-                      false: modalTextColor,
-                      true: currentTheme.green,
-                    }}
-                    thumbColor={
-                      splitTaxEvenly ? currentTheme.textDefault : "#f4f3f4"
-                    }
-                    onValueChange={(value: boolean) => setSplitTaxEvenly(value)}
+                    trackColor={{ false: modalTextColor, true: theme.green }}
+                    thumbColor={splitTaxEvenly ? theme.textDefault : "#f4f3f4"}
+                    onValueChange={setSplitTaxEvenly}
                   />
                 </View>
 
@@ -255,16 +229,13 @@ const SettingsButton: React.FC<SettingsButtonProps> = ({
                   style={({ pressed }) => [
                     styles.closeButton,
                     {
-                      backgroundColor: pressed
-                        ? currentTheme.green
-                        : currentTheme.yellow,
+                      backgroundColor: pressed ? theme.green : theme.yellow,
                     },
                   ]}
                 >
-                  {/* for dark mode => black text */}
                   <Text
                     style={{
-                      color: darkMode ? "#000000" : modalTextColor,
+                      color: mode === "dark" ? "#000000" : modalTextColor,
                       fontWeight: "bold",
                     }}
                   >

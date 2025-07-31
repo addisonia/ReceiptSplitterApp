@@ -1,3 +1,4 @@
+// src/screens/Receipts.tsx
 import React, { useEffect, useState, useRef } from "react";
 import {
   View,
@@ -16,31 +17,30 @@ import Icon from "react-native-vector-icons/FontAwesome";
 import { useNavigation } from "@react-navigation/native";
 import { StackNavigationProp } from "@react-navigation/stack";
 import { RootStackParamList } from "../types/RootStackParams";
+import { useTheme } from "../context/ThemeContext";
 import colors from "../../constants/colors";
 
 type ReceiptsScreenProp = StackNavigationProp<RootStackParamList, "Receipts">;
 
 const Receipts = () => {
+  const { theme, mode } = useTheme();
   const navigation = useNavigation<ReceiptsScreenProp>();
 
-  // state for receipts, loading indicator, and button colors
   const [receipts, setReceipts] = useState<Record<string, any> | null>(null);
   const [loading, setLoading] = useState(true);
-  const [homeIconColor, setHomeIconColor] = useState(colors.yellow);
-
-  // state for edit mode and its icon color
+  const [homeIconColor, setHomeIconColor] = useState(
+    mode === "yuck" ? "#e3d400" : theme.yellow
+  );
   const [editMode, setEditMode] = useState(false);
-  const [editIconColor, setEditIconColor] = useState(colors.yellow);
-
-  // state to track which receipts are expanded
-  // key is receipt name, value is boolean (true = expanded)
+  const [editIconColor, setEditIconColor] = useState(
+    mode === "yuck" ? "#e3d400" : theme.yellow
+  );
   const [expandedReceipts, setExpandedReceipts] = useState<{
     [key: string]: boolean;
   }>({});
 
   const user = auth.currentUser;
 
-  // receipts.tsx - update the useeffect fetch logic
   useEffect(() => {
     let isMounted = true;
     const fetchReceipts = async () => {
@@ -72,18 +72,19 @@ const Receipts = () => {
     };
   }, [user]);
 
-  // navigate home
   const goHome = () => {
-    setHomeIconColor(colors.green);
+    setHomeIconColor(mode === "yuck" ? "#08f800" : theme.green);
     navigation.navigate("MainTabs", { screen: "Home" });
+    setTimeout(
+      () => setHomeIconColor(mode === "yuck" ? "#e3d400" : theme.yellow),
+      200
+    );
   };
 
-  // toggle edit mode
   const toggleEditMode = () => {
     setEditMode((prev) => !prev);
   };
 
-  // toggle expand for a specific receipt
   const toggleExpand = (receiptName: string) => {
     setExpandedReceipts((prev) => ({
       ...prev,
@@ -91,7 +92,6 @@ const Receipts = () => {
     }));
   };
 
-  // delete a receipt from the database and update local state
   const deleteReceipt = async (receiptName: string) => {
     if (!user) return;
     try {
@@ -108,7 +108,6 @@ const Receipts = () => {
     }
   };
 
-  // component for a trash icon that shakes
   const ShakingTrash = ({ onPress }: { onPress: () => void }) => {
     const shakeAnim = useRef(new Animated.Value(0)).current;
 
@@ -148,12 +147,10 @@ const Receipts = () => {
     );
   };
 
-  // render receipts sorted by date
   const renderReceipts = () => {
     if (!receipts) {
       return <Text style={styles.noReceiptsText}>no receipts found.</Text>;
     }
-    // sort the receipts by date (newest first)
     const sortedEntries = Object.entries(receipts).sort((a, b) => {
       const dateA = new Date(a[1].time_and_date);
       const dateB = new Date(b[1].time_and_date);
@@ -161,7 +158,6 @@ const Receipts = () => {
     });
 
     return sortedEntries.map(([receiptName, receiptData]) => {
-      // compute total cost
       let totalCost = 0;
       if (receiptData.items) {
         totalCost =
@@ -171,12 +167,10 @@ const Receipts = () => {
           ) + (receiptData.tax || 0);
       }
       const dateString = new Date(receiptData.time_and_date).toLocaleString();
-
       const isExpanded = !!expandedReceipts[receiptName];
 
       return (
         <View key={receiptName} style={styles.receiptCard}>
-          {/* show trash icon in edit mode */}
           {editMode && (
             <ShakingTrash onPress={() => deleteReceipt(receiptName)} />
           )}
@@ -184,11 +178,9 @@ const Receipts = () => {
           <Text style={styles.receiptDate}>date: {dateString}</Text>
           <Text style={styles.receiptCost}>total: ${totalCost.toFixed(2)}</Text>
 
-          {/* only display items if expanded */}
           {isExpanded && receiptData.items && receiptData.items.length > 0 && (
             <>
               {receiptData.items.map((item: any, idx: number) => {
-                // filter buyers that are selected
                 const selectedBuyers = item.buyers
                   ? item.buyers.filter((b: any) =>
                       Array.isArray(b.selected)
@@ -213,7 +205,6 @@ const Receipts = () => {
             </>
           )}
 
-          {/* chevron to toggle expansion for this receipt */}
           <TouchableOpacity
             style={styles.expandButton}
             onPress={() => toggleExpand(receiptName)}
@@ -230,27 +221,53 @@ const Receipts = () => {
   };
 
   return (
-    <View style={styles.container}>
-      <StatusBar barStyle="light-content" backgroundColor={colors.yuck} />
+    <View
+      style={[
+        styles.container,
+        { backgroundColor: mode === "yuck" ? "#5c540b" : theme.offWhite2 },
+      ]}
+    >
+      <StatusBar
+        barStyle={
+          mode === "offWhite" || mode === "default"
+            ? "dark-content"
+            : "light-content"
+        }
+        backgroundColor={mode === "yuck" ? "#5c540b" : theme.offWhite2}
+      />
 
-      {/* top row with home and edit buttons */}
       <View style={styles.topRow}>
         <TouchableOpacity
           style={styles.homeButton}
           onPress={goHome}
-          onPressIn={() => setHomeIconColor(colors.green)}
-          onPressOut={() => setHomeIconColor(colors.yellow)}
+          onPressIn={() =>
+            setHomeIconColor(mode === "yuck" ? "#08f800" : theme.green)
+          }
+          onPressOut={() =>
+            setHomeIconColor(mode === "yuck" ? "#e3d400" : theme.yellow)
+          }
         >
           <Icon name="home" size={30} color={homeIconColor} />
         </TouchableOpacity>
 
-        <Text style={styles.screenTitle}>Receipts</Text>
+        <Text
+          style={[
+            styles.screenTitle,
+            { color: mode === "dark" ? colors.offWhite : mode === "yuck" ? "white" : "#333" },
+          ]}
+        >
+          Receipts
+        </Text>
 
         <TouchableOpacity
           style={styles.editButton}
           onPress={toggleEditMode}
-          onPressIn={() => setEditIconColor(colors.green)}
-          onPressOut={() => setEditIconColor(colors.yellow)}
+          onPressIn={() =>
+            setEditIconColor(mode === "yuck" ? "#08f800" : theme.green)
+          }
+          onPressOut={() =>
+            setEditIconColor(mode === "yuck" ? "#e3d400" : theme.yellow)
+          }
         >
           <Icon name="trash" size={30} color={editIconColor} />
         </TouchableOpacity>
@@ -273,7 +290,6 @@ const { width: screenWidth } = Dimensions.get("window");
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: colors.yuck,
     paddingTop: 40,
     alignItems: "center",
   },

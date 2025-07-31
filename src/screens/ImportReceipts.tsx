@@ -1,12 +1,19 @@
+// src/screens/ImportReceipts.tsx
 import React, { useEffect, useState } from "react";
-import { ScrollView, Text, StyleSheet, StatusBar, Pressable, View } from "react-native";
+import {
+  ScrollView,
+  Text,
+  StyleSheet,
+  StatusBar,
+  Pressable,
+  View,
+} from "react-native";
 import { useNavigation } from "@react-navigation/native";
 import { auth, database } from "../firebase";
 import { ref, onValue } from "firebase/database";
 import Icon from "react-native-vector-icons/FontAwesome";
-import colors from "../../constants/colors";
+import { useTheme } from "../context/ThemeContext";
 
-// types for buyer, item, and receipt
 export type BuyerType = {
   name: string;
   selected: boolean[];
@@ -27,7 +34,6 @@ export type ReceiptData = {
   time_and_date: string;
 };
 
-// helper to normalize a buyer
 function normalizeBuyer(rawBuyer: any): BuyerType {
   if (typeof rawBuyer === "string") {
     return { name: rawBuyer, selected: [] };
@@ -47,7 +53,6 @@ function normalizeBuyer(rawBuyer: any): BuyerType {
   return { name: "UnknownBuyer", selected: [] };
 }
 
-// helper to normalize an item
 function normalizeItem(rawItem: any): ItemType {
   let iName = "";
   if (typeof rawItem.item === "string") {
@@ -84,7 +89,6 @@ function normalizeItem(rawItem: any): ItemType {
   };
 }
 
-// helper to normalize a receipt object
 function normalizeReceiptData(receiptKey: string, rawData: any): ReceiptData {
   const t =
     typeof rawData.time_and_date === "string" ? rawData.time_and_date : "";
@@ -110,11 +114,11 @@ function normalizeReceiptData(receiptKey: string, rawData: any): ReceiptData {
 }
 
 export default function ImportReceipts() {
+  const { theme, mode } = useTheme();
   const navigation = useNavigation<any>();
   const [receipts, setReceipts] = useState<ReceiptData[]>([]);
-  const [backIconColor, setBackIconColor] = useState(colors.yellow);
+  const [backIconColor, setBackIconColor] = useState(theme.yellow);
 
-  // importreceipts.tsx - Update the useEffect
   useEffect(() => {
     if (!auth.currentUser) return;
     const userId = auth.currentUser.uid;
@@ -147,12 +151,10 @@ export default function ImportReceipts() {
     });
   }
 
-  // use goBack so that we return to the previous screen
   function handleBack() {
     navigation.goBack();
   }
 
-  // calculate total cost for a receipt
   function calculateTotal(receipt: ReceiptData) {
     return (
       receipt.items.reduce((sum, item) => sum + item.price * item.quantity, 0) +
@@ -161,20 +163,37 @@ export default function ImportReceipts() {
   }
 
   return (
-    <View style={styles.mainContainer}>
-      <StatusBar barStyle="light-content" backgroundColor={colors.yuck} />
+    <View style={[styles.mainContainer, { backgroundColor: theme.offWhite2 }]}>
+      <StatusBar
+        barStyle={
+          mode === "offWhite" || mode === "default"
+            ? "dark-content"
+            : "light-content"
+        }
+        backgroundColor={theme.offWhite2}
+      />
 
-      <View style={styles.topBar}>
+      <View style={[styles.topBar, { backgroundColor: theme.offWhite2 }]}>
         <Pressable
           onPress={handleBack}
           style={styles.backButton}
-          onPressIn={() => setBackIconColor(colors.green)}
-          onPressOut={() => setBackIconColor(colors.yellow)}
+          onPressIn={() => setBackIconColor(theme.green)}
+          onPressOut={() => setBackIconColor(theme.yellow)}
         >
           <Icon name="arrow-left" size={24} color={backIconColor} />
         </Pressable>
-        <Text style={styles.header}>Import Receipts</Text>
-        {/* spacer to balance the top bar */}
+        {/* text color changes based on mode to make it darker in offWhite/default */}
+        <Text
+          style={[
+            styles.header,
+            {
+              color:
+                mode === "offWhite" || mode === "default" ? "#222" : "#fff",
+            },
+          ]}
+        >
+          Import Receipts
+        </Text>
         <View style={styles.headerSpacer} />
       </View>
       <ScrollView contentContainerStyle={styles.contentContainer}>
@@ -186,23 +205,64 @@ export default function ImportReceipts() {
               onPress={() => handleSelectReceipt(receipt)}
               style={({ pressed }) => [
                 styles.card,
-                { backgroundColor: pressed ? colors.graygreen : "#333" },
+                {
+                  backgroundColor:
+                    mode === "dark"
+                      ? pressed
+                        ? theme.offWhite
+                        : theme.lightGray2
+                      : mode === "yuck"
+                      ? pressed
+                        ? theme.green
+                        : theme.yellow
+                      : mode === "default"
+                      ? pressed
+                        ? theme.offWhite2
+                        : theme.lightGray2
+                      : pressed
+                      ? theme.lightGray
+                      : '#b3ad9d',
+                },
               ]}
             >
-              <Text style={styles.cardText}>{receipt.name}</Text>
-              <Text style={styles.cardSubText}>
+              <Text
+                style={[
+                  styles.cardText,
+                  { color: mode === "dark" ? "#fff" : "#222" },
+                ]}
+              >
+                {receipt.name}
+              </Text>
+              <Text
+                style={[
+                  styles.cardSubText,
+                  { color: mode === "dark" ? "#ccc" : "#555" },
+                ]}
+              >
                 {receipt.time_and_date
                   ? new Date(receipt.time_and_date).toLocaleString()
                   : ""}
               </Text>
-              <Text style={styles.cardTotal}>
+              <Text
+                style={[
+                  styles.cardTotal,
+                  { color: mode === "dark" ? "#fff" : "#222" },
+                ]}
+              >
                 Total: ${totalCost.toFixed(2)}
               </Text>
             </Pressable>
           );
         })}
         {receipts.length === 0 && (
-          <Text style={styles.emptyText}>No receipts found.</Text>
+          <Text
+            style={[
+              styles.emptyText,
+              { color: mode === "dark" ? "#fff" : "#222" },
+            ]}
+          >
+            No receipts found.
+          </Text>
         )}
       </ScrollView>
     </View>
@@ -212,7 +272,6 @@ export default function ImportReceipts() {
 const styles = StyleSheet.create({
   mainContainer: {
     flex: 1,
-    backgroundColor: colors.yuck,
   },
   topBar: {
     flexDirection: "row",
@@ -220,7 +279,6 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
     paddingHorizontal: 15,
     paddingVertical: 10,
-    backgroundColor: colors.yuck,
   },
   backButton: {
     padding: 10,
@@ -229,7 +287,6 @@ const styles = StyleSheet.create({
     flex: 1,
     fontSize: 20,
     fontWeight: "bold",
-    color: "#fff",
     textAlign: "center",
   },
   headerSpacer: {
@@ -239,34 +296,29 @@ const styles = StyleSheet.create({
     alignItems: "center",
     paddingHorizontal: 20,
     paddingBottom: 20,
-    marginTop: 20, // extra margin between top bar and receipts
+    marginTop: 20,
   },
   card: {
     padding: 12,
     marginBottom: 15,
-    backgroundColor: "#333",
     borderRadius: 6,
     width: "90%",
   },
   cardText: {
     fontSize: 18,
     fontWeight: "600",
-    color: "#fff",
     marginBottom: 5,
   },
   cardSubText: {
     fontSize: 12,
-    color: "#ccc",
     marginBottom: 5,
   },
   cardTotal: {
     fontSize: 16,
-    color: "#fff",
     marginBottom: 10,
   },
   emptyText: {
     marginTop: 20,
     fontSize: 14,
-    color: "#fff",
   },
 });

@@ -1,9 +1,18 @@
-// components/ChatSkeleton.tsx
+// src/screens/ChatSkeleton.tsx
 import React from "react";
-import { View, Text, StyleSheet, Animated, ViewStyle } from "react-native";
-import colors from "../../constants/colors";
-import { Dimensions } from "react-native";
+import {
+  View,
+  Text,
+  StyleSheet,
+  Animated,
+  Dimensions,
+  ViewStyle,
+} from "react-native";
+import { useTheme } from "../context/ThemeContext";
+import { colors } from "../components/ColorThemes";
+import GoogleSignInButton from "../components/GoogleSignInButton";
 
+const SPLIT_STORAGE_KEY = "@split_state";
 const screenHeight = Dimensions.get("window").height;
 
 interface SkeletonMessageProps {
@@ -32,9 +41,7 @@ const SkeletonMessage: React.FC<SkeletonMessageProps> = ({
         }),
       ])
     );
-
     animation.start();
-
     return () => animation.stop();
   }, []);
 
@@ -53,6 +60,12 @@ const SkeletonMessage: React.FC<SkeletonMessageProps> = ({
 };
 
 const ChatSkeleton: React.FC = () => {
+  const { theme, mode } = useTheme();
+
+  // Text color: white in dark mode, otherwise theme.black
+  const textColor =
+    mode === "yuck" || mode === "dark" ? "#ffffff" : theme.black;
+
   const messages: SkeletonMessageProps[] = [
     { width: "60%", alignSelf: "flex-start" },
     { width: "40%", alignSelf: "flex-start" },
@@ -63,9 +76,11 @@ const ChatSkeleton: React.FC = () => {
   ];
 
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, { backgroundColor: theme.offWhite2 }]}>
       <View style={styles.headerContainer}>
-        <Text style={styles.headerText}>You're Missing Out...</Text>
+        <Text style={[styles.headerText, { color: textColor }]}>
+          You're Missing Out...
+        </Text>
       </View>
       <View style={styles.messagesContainer}>
         {messages.map((msg, index) => (
@@ -77,16 +92,29 @@ const ChatSkeleton: React.FC = () => {
         ))}
       </View>
       <View style={styles.signInContainer}>
-        <Text style={styles.signInText}>Sign In To Access Chat Rooms</Text>
+        <Text style={[styles.signInText, { color: textColor }]}>
+          Sign In To Access Chat Rooms
+        </Text>
+
+        {/* new google sign‑in button */}
+        <GoogleSignInButton
+          onSuccess={handleGoogleSuccess}
+          style={{ marginTop: 20 }}
+        />
       </View>
     </View>
   );
 };
 
+const handleGoogleSuccess = () => {
+  // nothing to do here – Chat.tsx will react to the auth change
+};
+
+export default ChatSkeleton;
+
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: colors.yuck,
   },
   headerContainer: {
     flex: 0,
@@ -95,7 +123,6 @@ const styles = StyleSheet.create({
   },
   headerText: {
     fontSize: 22,
-    color: "white",
     paddingTop: 30,
   },
   messagesContainer: {
@@ -108,7 +135,7 @@ const styles = StyleSheet.create({
   },
   skeletonMessage: {
     height: 60,
-    backgroundColor: "#0C3A50",
+    backgroundColor: "#0C3A50", // You could make this dynamic with theme if desired
     borderRadius: 10,
     marginVertical: 8,
   },
@@ -119,8 +146,5 @@ const styles = StyleSheet.create({
   },
   signInText: {
     fontSize: 18,
-    color: "white",
   },
 });
-
-export default ChatSkeleton;

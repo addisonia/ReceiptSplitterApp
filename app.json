@@ -2,9 +2,9 @@
   "expo": {
     "name": "ReceiptSplitter",
     "slug": "ReceiptSplitter",
-    "version": "1.0.0",
+    "version": "1.0.6",
     "orientation": "portrait",
-    "icon": "./assets/images/splash-icon.png",
+    "icon": "./assets/images/receipt_icon.png",
     "scheme": "receiptsplitter",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
@@ -14,10 +14,11 @@
     },
     "android": {
       "package": "org.receiptsplitter.app",
+      "versionCode": 6,
       "googleServicesFile": "./google-services.json",
       "adaptiveIcon": {
-        "foregroundImage": "./assets/images/adaptive-icon.png",
-        "backgroundColor": "#ffffff"
+        "foregroundImage": "./assets/images/receipt_icon.png",
+        "backgroundColor": "#5c540b"
       },
       "intentFilters": [
         {

@@ -12,4 +12,6 @@ export default {
   darkGray: 'rgba(56, 56, 56, 0.78)',
   red: 'rgba(255, 0, 0, 0.78)',
   extraYuckLight: 'rgba(243, 246, 155, 0.54)',
+  roomsRed: '#7d001d',
+  roomsOffWhite: '#f2efdf',
 };

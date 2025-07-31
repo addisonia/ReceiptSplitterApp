@@ -29,7 +29,7 @@
 //       try {
 //         const url = new URL(event.url);
 //         const token = url.searchParams.get('token');
-        
+
 //         if (token) {
 //           setLoading(true);
 //           const credential = GoogleAuthProvider.credential(token);
@@ -91,7 +91,10 @@
 
 
 
-import React from 'react';
+
+
+
+import React from "react";
 import {
   Pressable,
   View,
@@ -99,28 +102,37 @@ import {
   ActivityIndicator,
   StyleProp,
   ViewStyle,
-} from 'react-native';
-import { GoogleSignin, statusCodes } from '@react-native-google-signin/google-signin';
-import { auth } from '../firebase';
-import { signInWithCredential, GoogleAuthProvider } from 'firebase/auth';
-import colors from '../../constants/colors';
-import { FontAwesome5 } from '@expo/vector-icons';
+} from "react-native";
+import {
+  GoogleSignin,
+  statusCodes,
+} from "@react-native-google-signin/google-signin";
+import { auth } from "../firebase";
+import { signInWithCredential, GoogleAuthProvider } from "firebase/auth";
+import colors from "../../constants/colors";
+import { FontAwesome5 } from "@expo/vector-icons";
+import { WEB_CLIENT_ID } from "@env";
 
 interface GoogleSignInButtonProps {
   onSuccess: () => void;
-  style?: StyleProp<ViewStyle> | ((state: { pressed: boolean }) => StyleProp<ViewStyle>);
+  style?:
+    | StyleProp<ViewStyle>
+    | ((state: { pressed: boolean }) => StyleProp<ViewStyle>);
 }
 
-const GoogleSignInButton: React.FC<GoogleSignInButtonProps> = ({ onSuccess, style }) => {
+const GoogleSignInButton: React.FC<GoogleSignInButtonProps> = ({
+  onSuccess,
+  style,
+}) => {
   const [loading, setLoading] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
 
   // Configure Google Signin
   React.useEffect(() => {
     GoogleSignin.configure({
-      webClientId: '405450216696-5vuae9eo51ol4grkorih91589g40n8o8.apps.googleusercontent.com',
+      webClientId: WEB_CLIENT_ID,
       offlineAccess: true,
-      scopes: ['profile', 'email'],
+      scopes: ["profile", "email"],
     });
   }, []);
 
@@ -131,33 +143,47 @@ const GoogleSignInButton: React.FC<GoogleSignInButtonProps> = ({ onSuccess, styl
 
       // Check if Play Services are available
       await GoogleSignin.hasPlayServices();
+      console.log("Play services available");
 
-      // Sign out to force account picker (optional: only if signed in)
-      await GoogleSignin.signOut();
+      // // Sign out from Google to force account picker (doesn’t affect Firebase)
+      // await GoogleSignin.signOut();
+      // console.log("Signed out from Google successfully");
 
-      // Sign in with Google
+      // Sign in with Google (this will show the account picker)
+      console.log("Attempting to sign in with Google...");
       const response = await GoogleSignin.signIn();
-
-      // Extract ID token from the response
       const idToken = response.data?.idToken;
-      if (!idToken) throw new Error('No ID token returned');
+      if (!idToken) {
+        console.log("Response structure:", JSON.stringify(response));
+        throw new Error("No ID token returned");
+      }
+      console.log("Got ID token");
 
       // Create a Google credential with the token
       const googleCredential = GoogleAuthProvider.credential(idToken);
+      console.log("Created Google credential");
 
       // Sign-in the user with Firebase
       await signInWithCredential(auth, googleCredential);
+      console.log("Firebase sign in successful");
 
       onSuccess();
     } catch (error: any) {
+      console.error("Google Sign In Error Details:", {
+        code: error.code,
+        message: error.message,
+        stack: error.stack,
+        fullError: JSON.stringify(error),
+      });
+
       if (error.code === statusCodes.SIGN_IN_CANCELLED) {
-        setError('Sign in cancelled');
+        setError("Sign in cancelled");
       } else if (error.code === statusCodes.IN_PROGRESS) {
-        setError('Sign in already in progress');
+        setError("Sign in already in progress");
       } else if (error.code === statusCodes.PLAY_SERVICES_NOT_AVAILABLE) {
-        setError('Play Services not available');
+        setError("Play Services not available");
       } else {
-        setError('Sign in failed: ' + error.message);
+        setError("Sign in failed: " + error.message);
       }
     } finally {
       setLoading(false);
@@ -165,7 +191,7 @@ const GoogleSignInButton: React.FC<GoogleSignInButtonProps> = ({ onSuccess, styl
   };
 
   return (
-    <View style={{ alignItems: 'center' }}>
+    <View style={{ alignItems: "center" }}>
       <Pressable
         onPress={handleGoogleSignIn}
         disabled={loading}
@@ -175,22 +201,29 @@ const GoogleSignInButton: React.FC<GoogleSignInButtonProps> = ({ onSuccess, styl
             padding: 15,
             borderRadius: 5,
             opacity: loading ? 0.7 : 1,
-            flexDirection: 'row',
-            alignItems: 'center',
+            flexDirection: "row",
+            alignItems: "center",
           },
-          typeof style === 'function' ? style({ pressed }) : style,
+          typeof style === "function" ? style({ pressed }) : style,
         ]}
       >
         {loading ? (
           <ActivityIndicator color="black" />
         ) : (
           <>
-            <FontAwesome5 name="google" size={20} color="black" style={{ marginRight: 10 }} />
-            <Text style={{ color: 'black', fontSize: 16 }}>Sign in with Google</Text>
+            <FontAwesome5
+              name="google"
+              size={20}
+              color="black"
+              style={{ marginRight: 10 }}
+            />
+            <Text style={{ color: "black", fontSize: 16 }}>
+              Sign in with Google
+            </Text>
           </>
         )}
       </Pressable>
-      {error && <Text style={{ color: 'red', marginTop: 10 }}>{error}</Text>}
+      {error && <Text style={{ color: "red", marginTop: 10 }}>{error}</Text>}
     </View>
   );
 };

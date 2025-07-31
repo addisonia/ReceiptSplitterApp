@@ -1,5 +1,11 @@
-// chat.tsx
-import React, { useState, useEffect } from "react";
+// src/screens/Chat.tsx
+import React, {
+  useState,
+  useEffect,
+  useRef,
+  memo,
+  useCallback, // Added memo and useCallback
+} from "react";
 import {
   View,
   Text,
@@ -14,23 +20,27 @@ import {
   Dimensions,
   Alert,
   Animated,
-  Clipboard,
+  KeyboardAvoidingView,
+  Platform,
 } from "react-native";
 import { FontAwesome } from "@expo/vector-icons";
 import { auth, database } from "../firebase";
 import { User, onAuthStateChanged } from "firebase/auth";
 import { ref, onValue, push, set, remove, get, child } from "firebase/database";
-import colors from "../../constants/colors";
 import ChatSkeleton from "../components/ChatSkeleton";
-import { useNavigation } from "@react-navigation/native";
+import { useNavigation, useFocusEffect } from "@react-navigation/native";
 import { RootStackParamList } from "../types/RootStackParams";
 import { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import Icon from "react-native-vector-icons/Feather";
+import { useTheme } from "../context/ThemeContext";
+import { colors } from "../components/ColorThemes";
+import * as Clipboard from "expo-clipboard";
 
-/* define route type */
+import * as Notifications from "expo-notifications";
+import Constants from "expo-constants";
+
 type ChatNavProp = NativeStackNavigationProp<RootStackParamList, "Chat">;
 
-/* define the firebase shape for each message */
 interface FirebaseMessageData {
   senderName?: string;
   text?: string;
@@ -40,7 +50,6 @@ interface FirebaseMessageData {
   receiptData?: any;
 }
 
-/* define your local message type */
 interface Message {
   key: string;
   senderName: string;
@@ -58,7 +67,6 @@ interface GroupChatData {
   participants: Record<string, boolean>;
 }
 
-/* define the shape for receipt data, if applicable */
 type ReceiptData = {
   name: string;
   items: ItemType[];
@@ -79,6 +87,7 @@ type BuyerType = {
   selected: boolean[];
 };
 
+// Normalizing functions (unchanged)
 function normalizeBuyer(rawBuyer: any): BuyerType {
   if (typeof rawBuyer === "string") {
     return { name: rawBuyer, selected: [] };
@@ -159,14 +168,28 @@ function normalizeReceiptData(receiptKey: string, rawData: any): ReceiptData {
   };
 }
 
+async function scheduleLocalNotification(messageText: string) {
+  await Notifications.scheduleNotificationAsync({
+    content: {
+      title: "New Group Chat Message",
+      body: messageText,
+    },
+    trigger: null, // Sends immediately
+  });
+}
+
 const Chat = () => {
+  const { theme, mode } = useTheme();
   const navigation = useNavigation<ChatNavProp>();
 
   const [user, setUser] = useState<User | null>(null);
   const [username, setUsername] = useState<string | null>(null);
   const [isSignedIn, setIsSignedIn] = useState(false);
 
-  /* tracking messages and group selection */
+  const [initialLoad, setInitialLoad] = useState(true);
+  const [showScrollDown, setShowScrollDown] = useState(false);
+  const flatListRef = useRef<FlatList<Message>>(null);
+
   const [messages, setMessages] = useState<Message[]>([]);
   const [selectedChat, setSelectedChat] = useState("global");
   const [groupChatsMap, setGroupChatsMap] = useState<
@@ -179,13 +202,14 @@ const Chat = () => {
     Record<string, boolean>
   >({});
 
-  /* friend-related state */
+  const [lastGlobalSendTime, setLastGlobalSendTime] = useState<number>(0);
+  const [lastGroupSendTime, setLastGroupSendTime] = useState<number>(0);
+
   const [myFriends, setMyFriends] = useState<Record<string, string>>({});
   const [outgoingRequests, setOutgoingRequests] = useState<Set<string>>(
     new Set()
   );
 
-  /* popup menu */
   const [popupVisible, setPopupVisible] = useState(false);
   const [popupX, setPopupX] = useState(0);
   const [popupY, setPopupY] = useState(0);
@@ -196,42 +220,62 @@ const Chat = () => {
     null
   );
 
-  /* group participants (for the group header list) */
   const [participantUsernames, setParticipantUsernames] = useState<string[]>(
     []
   );
   const [dropdownOpen, setDropdownOpen] = useState(false);
+  const [cooldownMessage, setCooldownMessage] = useState<string | null>(null);
 
-  /* color palette for other users */
+  const [isReportModalVisible, setIsReportModalVisible] = useState(false);
+  const [reportReason, setReportReason] = useState("");
+  const [reportAdditionalInfo, setReportAdditionalInfo] = useState("");
+  const [reportConfirmation, setReportConfirmation] = useState<string | null>(
+    null
+  );
+
   const userColors = [
-    "#c177d9", // Lavender Purple
-    "#77d997", // Mint Green
-    "#d97777", // Soft Red
-    "#d9d177", // Pale Yellow
-    "#77b7d9", // Sky Blue
-    "#a477d9", // Medium Purple
-    "#d9a477", // Peach
-    "#9afbfc", // Aqua
-    "#ff9a76", // Coral
-    "#baff66", // Lime Green
-    "#ff66dc", // Hot Pink
-    "#66ffed", // Turquoise
-    "#ffee66", // Bright Yellow
-    "#ff6666", // Bright Red
-    "#66c7ff", // Electric Blue
-    "#d966ff", // Vibrant Purple
-    "#ffb266", // Orange
-    "#66ff8c", // Neon Green
-    "#ff66a3", // Pink
-    "#c4ff66", // Chartreuse
+    "#c177d9",
+    "#77d997",
+    "#d97777",
+    "#d9d177",
+    "#77b7d9",
+    "#a477d9",
+    "#d9a477",
+    "#9afbfc",
+    "#ff9a76",
+    "#baff66",
+    "#ff66dc",
+    "#66ffed",
+    "#ffee66",
+    "#ff6666",
+    "#66c7ff",
+    "#d966ff",
+    "#ffb266",
+    "#66ff8c",
+    "#ff66a3",
+    "#c4ff66",
   ];
 
-  /* state for user->color map */
   const [assignedColors, setAssignedColors] = useState<{
     [name: string]: string;
   }>({});
 
-  /* watch auth changes */
+  const titleBarTextColor =
+    mode === "yuck" || mode === "dark" || mode === "random"
+      ? "#ffffff"
+      : "#000";
+
+  useEffect(() => {
+    (async () => {
+      if (Constants.isDevice) {
+        const { status } = await Notifications.requestPermissionsAsync();
+        if (status !== "granted") {
+          Alert.alert("No notification permissions granted.");
+        }
+      }
+    })();
+  }, []);
+
   useEffect(() => {
     const unsubscribeAuth = onAuthStateChanged(auth, (currentUser) => {
       setUser(currentUser);
@@ -239,14 +283,12 @@ const Chat = () => {
         setIsSignedIn(true);
         fetchChatUsernameFromDB(currentUser.uid);
 
-        /* read user’s friends list */
         const friendsRef = ref(database, `users/${currentUser.uid}/friends`);
         onValue(friendsRef, (snap) => {
           const data = snap.val() || {};
           setMyFriends(data);
         });
 
-        /* read user’s outgoing friend requests */
         const outRef = ref(database, `outgoingRequests/${currentUser.uid}`);
         onValue(outRef, (snap) => {
           if (!snap.exists()) {
@@ -256,11 +298,16 @@ const Chat = () => {
           }
         });
 
-        /* load the user’s group chats */
         loadUserGroups(currentUser.uid);
       } else {
         setIsSignedIn(false);
         setUsername("Guest");
+        // Clear user-specific data on sign out
+        setMyFriends({});
+        setOutgoingRequests(new Set());
+        setGroupChatsMap({});
+        setGroupChatArray([]);
+        setMessages([]); // Clear messages
       }
     });
     return () => unsubscribeAuth();
@@ -268,271 +315,365 @@ const Chat = () => {
 
   const fetchChatUsernameFromDB = (uid: string) => {
     const usernameRef = ref(database, `users/${uid}/username`);
-    onValue(usernameRef, (snapshot) => {
-      const dbUsername = snapshot.val();
-      if (dbUsername) {
-        setUsername(dbUsername);
-      } else {
-        setUsername("Loading...");
+    onValue(
+      usernameRef,
+      (snapshot) => {
+        const dbUsername = snapshot.val();
+        if (dbUsername) {
+          setUsername(dbUsername);
+        } else {
+          setUsername("Loading..."); // Or handle as anonymous/guest if no username
+        }
+      },
+      (error) => {
+        console.error("Error fetching username:", error);
+        setUsername("Error");
       }
-    });
+    );
   };
 
   const loadUserGroups = (uid: string) => {
     const userGroupsRef = ref(database, `users/${uid}/groups`);
-    onValue(userGroupsRef, (snapshot) => {
-      const groupIdsObj = snapshot.val() || {};
-      const groupIds = Object.keys(groupIdsObj);
-      const newMap: Record<string, GroupChatData> = {};
+    onValue(
+      userGroupsRef,
+      (snapshot) => {
+        const groupIdsObj = snapshot.val() || {};
+        const groupIds = Object.keys(groupIdsObj);
+        const newMap: Record<string, GroupChatData> = {};
+        let groupsProcessed = 0;
 
-      groupIds.forEach((gid) => {
-        const singleGroupRef = ref(database, `groupChats/${gid}`);
-        onValue(singleGroupRef, (snap) => {
-          if (snap.exists()) {
-            const val = snap.val();
-            const groupData: GroupChatData = {
-              id: gid,
-              name: val.name,
-              creator: val.creator,
-              participants: val.participants || {},
-            };
-            newMap[gid] = groupData;
-          }
-          setGroupChatsMap((prev) => {
-            const merged = { ...prev, ...newMap };
-            /* remove old groups if no longer in user’s list */
-            for (const k of Object.keys(merged)) {
-              if (!groupIds.includes(k)) {
-                delete merged[k];
+        if (groupIds.length === 0) {
+          setGroupChatsMap({});
+          setGroupChatArray([]);
+          return;
+        }
+
+        groupIds.forEach((gid) => {
+          const singleGroupRef = ref(database, `groupChats/${gid}`);
+          // Use get() for one-time fetch or ensure onValue detaches properly
+          onValue(
+            singleGroupRef,
+            (snap) => {
+              if (snap.exists()) {
+                const val = snap.val();
+                const groupData: GroupChatData = {
+                  id: gid,
+                  name: val.name,
+                  creator: val.creator,
+                  participants: val.participants || {},
+                };
+                newMap[gid] = groupData;
               }
-            }
-            const arr = Object.values(merged);
-            setGroupChatArray(arr);
-            return merged;
-          });
+              groupsProcessed++;
+              if (groupsProcessed === groupIds.length) {
+                // This logic ensures we update state only after all groups are processed
+                // It's a bit complex with nested onValue, consider simplifying if possible
+                setGroupChatsMap((prevMap) => {
+                  const merged = { ...prevMap, ...newMap };
+                  // Clean up groups that the user is no longer part of
+                  Object.keys(merged).forEach((key) => {
+                    if (!groupIds.includes(key)) {
+                      delete merged[key];
+                    }
+                  });
+                  setGroupChatArray(Object.values(merged));
+                  return merged;
+                });
+              }
+            },
+            { onlyOnce: true }
+          ); // Fetch group details once or manage listeners carefully
         });
-      });
-
-      if (groupIds.length === 0) {
-        setGroupChatsMap({});
-        setGroupChatArray([]);
+      },
+      (error) => {
+        console.error("Error loading user groups:", error);
       }
-    });
+    );
   };
 
-  /* watch the messages for the selected chat */
   useEffect(() => {
-    if (!isSignedIn) return;
-    let unsubscribe: () => void;
-
-    if (selectedChat === "global") {
-      const messagesRef = ref(database, "chat/messages");
-      unsubscribe = onValue(messagesRef, (snapshot) => {
-        const data = snapshot.val();
-        const messagesArray: Message[] = [];
-
-        if (data) {
-          Object.entries(data).forEach(([_, userMessages]) => {
-            if (typeof userMessages === "object" && userMessages !== null) {
-              Object.entries(userMessages).forEach(([msgId, raw]) => {
-                const msgData = raw as FirebaseMessageData;
-                messagesArray.push({
-                  key: msgId,
-                  senderName: msgData.senderName ?? "",
-                  text: msgData.text ?? "",
-                  timestamp: msgData.timestamp ?? 0,
-                  senderUid: msgData.senderUid,
-                  type: msgData.type ?? "text",
-                  receiptData: msgData.receiptData,
-                });
-              });
-            }
-          });
-          messagesArray.sort((a, b) => a.timestamp - b.timestamp);
-          setMessages(messagesArray);
-        } else {
-          setMessages([]);
-        }
-      });
-    } else {
-      const groupMessagesRef = ref(
-        database,
-        `groupChats/${selectedChat}/messages`
-      );
-      unsubscribe = onValue(groupMessagesRef, (snapshot) => {
-        const data = snapshot.val();
-        const messagesArray: Message[] = [];
-
-        if (data) {
-          Object.entries(data).forEach(([msgId, raw]) => {
-            const msgData = raw as FirebaseMessageData;
-            messagesArray.push({
-              key: msgId,
-              senderName: msgData.senderName ?? "",
-              text: msgData.text ?? "",
-              timestamp: msgData.timestamp ?? 0,
-              senderUid: msgData.senderUid,
-              type: msgData.type ?? "text",
-              receiptData: msgData.receiptData,
-            });
-          });
-          messagesArray.sort((a, b) => a.timestamp - b.timestamp);
-          setMessages(messagesArray);
-        } else {
-          setMessages([]);
-        }
-      });
+    if (!isSignedIn) {
+      setMessages([]); // Clear messages if not signed in
+      return;
     }
+
+    let messagesRefPath: string;
+    if (selectedChat === "global") {
+      // OPTIMIZATION: If global chat messages are under a single flat node, adjust this path.
+      // Example: messagesRefPath = "global_chat_messages";
+      // For now, assuming the existing structure:
+      messagesRefPath = "chat/messages";
+    } else {
+      messagesRefPath = `groupChats/${selectedChat}/messages`;
+    }
+
+    const currentMessagesRef = ref(database, messagesRefPath);
+    const unsubscribe = onValue(
+      currentMessagesRef,
+      (snapshot) => {
+        const data = snapshot.val();
+        const messagesArray: Message[] = [];
+
+        if (data) {
+          if (selectedChat === "global") {
+            // Original global chat processing
+            Object.entries(data).forEach(([_, userMessages]) => {
+              if (typeof userMessages === "object" && userMessages !== null) {
+                Object.entries(userMessages).forEach(([msgId, raw]) => {
+                  const msgData = raw as FirebaseMessageData;
+                  messagesArray.push({
+                    key: msgId,
+                    senderName: msgData.senderName ?? "",
+                    text: msgData.text ?? "",
+                    timestamp: msgData.timestamp ?? 0,
+                    senderUid: msgData.senderUid,
+                    type: msgData.type ?? "text",
+                    receiptData: msgData.receiptData,
+                  });
+                });
+              }
+            });
+          } else {
+            // Group chat processing (already flat)
+            Object.entries(data).forEach(([msgId, raw]) => {
+              const msgData = raw as FirebaseMessageData;
+              messagesArray.push({
+                key: msgId,
+                senderName: msgData.senderName ?? "",
+                text: msgData.text ?? "",
+                timestamp: msgData.timestamp ?? 0,
+                senderUid: msgData.senderUid,
+                type: msgData.type ?? "text",
+                receiptData: msgData.receiptData,
+              });
+            });
+          }
+          messagesArray.sort((a, b) => a.timestamp - b.timestamp);
+          setMessages(messagesArray);
+        } else {
+          setMessages([]);
+        }
+        setInitialLoad(false); // Moved here to ensure it's set after first data load or no data
+      },
+      (error) => {
+        console.error(`Error fetching messages for ${selectedChat}:`, error);
+        setMessages([]);
+        setInitialLoad(false);
+      }
+    );
+
     return () => {
       if (unsubscribe) unsubscribe();
     };
   }, [isSignedIn, selectedChat]);
 
-  /* whenever 'selectedChat' changes, load participant names (for group) */
   useEffect(() => {
     if (selectedChat === "global") {
       setParticipantUsernames([]);
       return;
     }
     const groupData = groupChatsMap[selectedChat];
-    if (!groupData) {
+    if (!groupData || !groupData.participants) {
       setParticipantUsernames([]);
       return;
     }
-    const participantUids = Object.keys(groupData.participants || {});
+    const participantUids = Object.keys(groupData.participants);
     const promises = participantUids.map(async (uid) => {
-      const snap = await get(child(ref(database), `users/${uid}/username`));
-      return snap.exists() ? snap.val() : "Unknown";
+      try {
+        const snap = await get(child(ref(database), `users/${uid}/username`));
+        return snap.exists() ? snap.val() : "Unknown";
+      } catch (error) {
+        console.error(`Error fetching username for UID ${uid}:`, error);
+        return "Error";
+      }
     });
     Promise.all(promises).then((names) => {
-      setParticipantUsernames(names);
+      setParticipantUsernames(names.filter((name) => name !== "Error"));
     });
   }, [selectedChat, groupChatsMap]);
 
-  /* assign colors to unique senders */
   useEffect(() => {
     const uniqueNames = Array.from(new Set(messages.map((m) => m.senderName)));
-    const updatedMap = { ...assignedColors };
+    const newAssignedColors = { ...assignedColors };
+    let colorIndex = Object.keys(newAssignedColors).length % userColors.length; // Start from a new index if needed
 
-    let colorCount = Object.keys(updatedMap).length;
     uniqueNames.forEach((name) => {
-      if (!updatedMap[name]) {
-        updatedMap[name] = userColors[colorCount % userColors.length];
-        colorCount++;
+      if (!newAssignedColors[name]) {
+        newAssignedColors[name] = userColors[colorIndex];
+        colorIndex = (colorIndex + 1) % userColors.length;
       }
     });
-
-    if (Object.keys(updatedMap).length !== Object.keys(assignedColors).length) {
-      setAssignedColors(updatedMap);
+    // Only update if there's an actual change to prevent unnecessary re-renders
+    if (JSON.stringify(newAssignedColors) !== JSON.stringify(assignedColors)) {
+      setAssignedColors(newAssignedColors);
     }
-  }, [messages, assignedColors, userColors]);
+  }, [messages]); // Removed assignedColors and userColors from deps as they don't need to trigger this effect directly.
 
-  const handleSendMessage = () => {
+  const handleSendMessage = async () => {
     if (!isSignedIn) {
-      alert("Sign in to send messages.");
+      setCooldownMessage("Sign in to send messages.");
+      setTimeout(() => setCooldownMessage(null), 2000);
       return;
     }
-    if (!username || username === "Loading...") {
-      alert("Waiting for username. Try again soon.");
+    if (!user || !username || username === "Loading...") {
+      setCooldownMessage("Waiting for username. Try again soon.");
+      setTimeout(() => setCooldownMessage(null), 2000);
       return;
     }
     if (!newMessageText.trim()) return;
 
-    if (selectedChat === "global") {
-      const messagesRef = ref(database, `chat/messages/${username}`);
-      const newMessageRef = push(messagesRef);
-      const messagePayload = {
-        text: newMessageText.trim(),
-        senderName: username,
-        timestamp: Date.now(),
-        senderUid: user?.uid || "unknown-uid",
-      };
-      set(newMessageRef, messagePayload).then(() => setNewMessageText(""));
-    } else {
-      const groupMessagesRef = ref(
-        database,
-        `groupChats/${selectedChat}/messages`
+    const currentTime = Date.now();
+    const isGlobalChat = selectedChat === "global";
+    const lastSendTime = isGlobalChat ? lastGlobalSendTime : lastGroupSendTime;
+    const cooldown = isGlobalChat ? 5000 : 1000; // 5s for global, 1s for group
+
+    if (currentTime - lastSendTime < cooldown) {
+      const remainingTime = Math.ceil(
+        (cooldown - (currentTime - lastSendTime)) / 1000
       );
-      const newGroupMsgRef = push(groupMessagesRef);
-      const messagePayload = {
-        text: newMessageText.trim(),
-        senderName: username,
-        timestamp: Date.now(),
-        senderUid: user?.uid || "unknown-uid",
-      };
-      set(newGroupMsgRef, messagePayload).then(() => setNewMessageText(""));
+      setCooldownMessage(
+        `Please wait ${remainingTime} second${
+          remainingTime > 1 ? "s" : ""
+        } before sending again.`
+      );
+      setTimeout(() => setCooldownMessage(null), 2000);
+      return;
+    }
+
+    const messagePayload = {
+      text: newMessageText.trim(),
+      senderName: username,
+      timestamp: currentTime,
+      senderUid: user.uid, // user is guaranteed to be non-null here
+      type: "text", // Default type
+    };
+
+    try {
+      if (isGlobalChat) {
+        // IMPORTANT: For global chat, if you change to a flat structure like 'global_chat_messages',
+        // this path needs to change. E.g., ref(database, 'global_chat_messages')
+        // The current structure `chat/messages/${username}` stores messages under the sender's username in global.
+        const messagesRef = ref(database, `chat/messages/${username}`);
+        const newMessageRef = push(messagesRef);
+        await set(newMessageRef, messagePayload);
+        setLastGlobalSendTime(currentTime);
+        await scheduleLocalNotification(
+          `New message in Global Chat from ${username}`
+        );
+      } else {
+        const groupMessagesRef = ref(
+          database,
+          `groupChats/${selectedChat}/messages`
+        );
+        const newGroupMsgRef = push(groupMessagesRef);
+        await set(newGroupMsgRef, messagePayload);
+        setLastGroupSendTime(currentTime);
+        await scheduleLocalNotification(
+          `New group message in ${
+            groupChatsMap[selectedChat]?.name ?? "Group"
+          } from ${username}`
+        );
+      }
+      setNewMessageText("");
+    } catch (error) {
+      console.error("Error sending message:", error);
+      Alert.alert("Error", "Could not send message. Please try again.");
     }
   };
 
-  const handleBubblePress = (msgKey: string) => {
+  // OPTIMIZATION: Wrap handleBubblePress in useCallback
+  const handleBubblePress = useCallback((msgKey: string) => {
     setExpandedMessages((prev) => ({
       ...prev,
       [msgKey]: !prev[msgKey],
     }));
-  };
+  }, []); // setExpandedMessages has a stable identity
 
-  const handleBubbleLongPress = (
-    isCurrentUserMessage: boolean,
-    targetUid: string | undefined,
-    targetName: string | undefined,
-    pageX: number,
-    pageY: number,
-    messageItem: Message
-  ) => {
-    if (isCurrentUserMessage || !targetUid || !targetName) return;
-    const friendUids = Object.keys(myFriends);
-    setIsTargetFriend(friendUids.includes(targetUid));
-    setLongPressedMessage(messageItem);
-    setPopupTargetUid(targetUid);
-    setPopupTargetName(targetName);
+  // OPTIMIZATION: Wrap handleBubbleLongPress in useCallback
+  const handleBubbleLongPress = useCallback(
+    (
+      isCurrentUserMessage: boolean,
+      targetUid: string | undefined,
+      targetName: string | undefined,
+      pageX: number,
+      pageY: number,
+      messageItem: Message
+    ) => {
+      if (isCurrentUserMessage || !targetUid || !targetName) return;
+      const friendUids = Object.keys(myFriends);
+      setIsTargetFriend(friendUids.includes(targetUid));
+      setLongPressedMessage(messageItem);
+      setPopupTargetUid(targetUid);
+      setPopupTargetName(targetName);
 
-    // Get screen dimensions
-    const screenHeight = Dimensions.get("window").height;
-    const inputAreaHeight = 70; // Approximate height of inputArea based on styles
-    const popupHeight = 150; // Approximate height of popup (adjust based on content)
+      const screenHeight = Dimensions.get("window").height;
+      const inputAreaHeight = 70;
+      const popupHeight =
+        selectedChat === "global"
+          ? 200
+          : messageItem.type === "receipt"
+          ? 150
+          : 200; // Adjusted for receipt popup
 
-    // Adjust popupY to stay above input area
-    const adjustedY = Math.min(
-      pageY,
-      screenHeight - inputAreaHeight - popupHeight - 10 // 10 for padding
-    );
+      const adjustedY = Math.min(
+        pageY,
+        screenHeight - inputAreaHeight - popupHeight - 10
+      );
 
-    setPopupX(pageX);
-    setPopupY(adjustedY);
-    setPopupVisible(true);
-  };
+      setPopupX(pageX);
+      setPopupY(adjustedY);
+      setPopupVisible(true);
+    },
+    [myFriends, selectedChat]
+  ); // Dependencies for useCallback
 
-  const handleCopyMessage = () => {
+  const handleCopyMessage = async () => {
     if (!longPressedMessage) return;
-    Clipboard.setString(longPressedMessage.text || "");
+    try {
+      await Clipboard.setStringAsync(longPressedMessage.text || "");
+      Alert.alert("Copied", "Message content copied to clipboard.");
+    } catch (e) {
+      Alert.alert("Error", "Could not copy message.");
+    }
     setPopupVisible(false);
   };
 
   const handleAddFriend = async () => {
-    if (!popupTargetUid || !user) return;
+    if (!popupTargetUid || !user || !username) return;
     if (outgoingRequests.has(popupTargetUid)) {
-      Alert.alert(`Waiting on response from ${popupTargetName}`);
+      Alert.alert(
+        "Request Pending",
+        `Waiting on response from ${popupTargetName || "user"}.`
+      );
       setPopupVisible(false);
       return;
     }
     const myUid = user.uid;
-    const usernameSnap = await get(ref(database, `users/${myUid}/username`));
-    let localName = "Unknown";
-    if (usernameSnap.exists()) {
-      localName = usernameSnap.val();
-    }
+    // const usernameSnap = await get(ref(database, `users/${myUid}/username`)); // username is already in state
+    // let localName = "Unknown";
+    // if (usernameSnap.exists()) {
+    //   localName = usernameSnap.val();
+    // }
     const frRef = ref(database, `friendRequests/${popupTargetUid}`);
     const newReqRef = push(frRef);
-    await set(newReqRef, {
-      fromUid: myUid,
-      fromUsername: localName,
-    });
-    await set(
-      ref(database, `outgoingRequests/${myUid}/${popupTargetUid}`),
-      true
-    );
-    setPopupVisible(false);
-    Alert.alert("Friend request sent", `Sent to ${popupTargetName}.`);
+    try {
+      await set(newReqRef, {
+        fromUid: myUid,
+        fromUsername: username, // Use state username
+      });
+      await set(
+        ref(database, `outgoingRequests/${myUid}/${popupTargetUid}`),
+        true
+      );
+      setPopupVisible(false);
+      Alert.alert(
+        "Friend request sent",
+        `Sent to ${popupTargetName || "user"}.`
+      );
+    } catch (error) {
+      console.error("Error sending friend request:", error);
+      Alert.alert("Error", "Could not send friend request.");
+    }
   };
 
   const confirmRemoveFriend = () => {
@@ -559,10 +700,19 @@ const Chat = () => {
     if (!user) return;
     setPopupVisible(false);
     const myUid = user.uid;
-    await remove(ref(database, `users/${myUid}/friends/${friendUid}`));
-    await remove(ref(database, `users/${friendUid}/friends/${myUid}`));
-    await remove(ref(database, `outgoingRequests/${myUid}/${friendUid}`));
-    await remove(ref(database, `outgoingRequests/${friendUid}/${myUid}`));
+    try {
+      await remove(ref(database, `users/${myUid}/friends/${friendUid}`));
+      await remove(ref(database, `users/${friendUid}/friends/${myUid}`));
+      await remove(ref(database, `outgoingRequests/${myUid}/${friendUid}`));
+      await remove(ref(database, `outgoingRequests/${friendUid}/${myUid}`));
+      Alert.alert(
+        "Friend Removed",
+        `${popupTargetName || "User"} has been removed from your friends.`
+      );
+    } catch (error) {
+      console.error("Error removing friend:", error);
+      Alert.alert("Error", "Could not remove friend.");
+    }
   };
 
   const handleMessage = () => {
@@ -575,10 +725,12 @@ const Chat = () => {
   };
 
   const handleLeaveGroup = () => {
-    if (!user) return;
+    if (!user || selectedChat === "global") return;
     Alert.alert(
       "Leave Group",
-      "Are you sure you want to leave this groupchat?",
+      `Are you sure you want to leave ${
+        groupChatsMap[selectedChat]?.name || "this group"
+      }?`,
       [
         { text: "Cancel", style: "cancel" },
         {
@@ -595,9 +747,16 @@ const Chat = () => {
               await remove(
                 ref(database, `users/${user.uid}/groups/${selectedChat}`)
               );
-              setSelectedChat("global");
+              Alert.alert(
+                "Group Left",
+                `You have left ${
+                  groupChatsMap[selectedChat]?.name || "the group"
+                }.`
+              );
+              setSelectedChat("global"); // Switch to global chat
             } catch (err) {
               console.error("Error leaving group:", err);
+              Alert.alert("Error", "Could not leave group.");
             }
           },
         },
@@ -614,7 +773,7 @@ const Chat = () => {
   };
 
   const handleUploadReceipt = () => {
-    if (!username) return; // prevent navigation if username is not loaded
+    if (!username || selectedChat === "global") return;
     navigation.navigate("UploadReceipt", {
       groupId: selectedChat,
       myUsername: username,
@@ -627,6 +786,7 @@ const Chat = () => {
       !longPressedMessage.receiptData ||
       !longPressedMessage.senderUid
     ) {
+      Alert.alert("Error", "Receipt data is missing.");
       return;
     }
     setPopupVisible(false);
@@ -650,7 +810,7 @@ const Chat = () => {
             {
               name: "MainTabs",
               params: {
-                screen: "Split",
+                screen: "Split", // Assuming 'Split' is a screen in 'MainTabs'
                 params: { importedReceipt: receiptData },
               },
             },
@@ -668,37 +828,94 @@ const Chat = () => {
     }
   };
 
+  const handleOpenReportModal = () => {
+    if (!popupTargetUid || !popupTargetName || !longPressedMessage) {
+      Alert.alert("Error", "Cannot report user. Information missing.");
+      return;
+    }
+    setPopupVisible(false);
+    setIsReportModalVisible(true);
+  };
+
+  const handleCloseReportModal = () => {
+    setIsReportModalVisible(false);
+    setReportReason("");
+    setReportAdditionalInfo("");
+  };
+
+  const handleSubmitReport = async () => {
+    if (
+      !user ||
+      !username ||
+      !popupTargetUid ||
+      !popupTargetName ||
+      !longPressedMessage
+    ) {
+      Alert.alert("Error", "Could not submit report. Missing information.");
+      handleCloseReportModal();
+      return;
+    }
+
+    if (!reportReason.trim()) {
+      Alert.alert("Reason Required", "Please provide a reason for the report.");
+      return;
+    }
+
+    const reportData = {
+      reportedUid: popupTargetUid,
+      reportedUsername: popupTargetName,
+      reporterUid: user.uid,
+      reporterUsername: username,
+      reason: reportReason.trim(),
+      additionalInfo: reportAdditionalInfo.trim(),
+      timestamp: Date.now(),
+      messageId: longPressedMessage.key,
+      messageText: longPressedMessage.text,
+      chatType: selectedChat === "global" ? "global" : "group",
+      chatId: selectedChat,
+    };
+
+    try {
+      const reportsRef = ref(database, "userReports");
+      const newReportRef = push(reportsRef);
+      await set(newReportRef, reportData);
+
+      setReportConfirmation("Report sent successfully.");
+      setTimeout(() => setReportConfirmation(null), 3000);
+      handleCloseReportModal();
+    } catch (error) {
+      console.error("Error submitting report:", error);
+      Alert.alert("Error", "Failed to submit report. Please try again.");
+      setReportConfirmation("Failed to send report.");
+      setTimeout(() => setReportConfirmation(null), 3000);
+    }
+  };
+
   const currentChatName =
     selectedChat === "global"
       ? "Global Chat"
-      : groupChatsMap[selectedChat]?.name || "Unknown Group";
+      : groupChatsMap[selectedChat]?.name || "Loading Group...";
 
-  if (!isSignedIn) {
-    return (
-      <View style={styles.signInMessageContainer}>
-        <ChatSkeleton />
-      </View>
-    );
-  }
-
-  /* render a single message item */
-  const MessageItem = React.memo(({ item }: { item: Message }) => {
+  // OPTIMIZATION: Wrap MessageItem with React.memo
+  // Note: For memo to be effective, props passed to MessageItem should be stable or primitive.
+  // 'item' is an object, so if its reference changes, MessageItem will re-render.
+  // However, FlatList's data prop handling combined with keyExtractor should manage this well.
+  // The main benefit here is if other props (not present currently) were to cause re-renders.
+  const MessageItem = memo(({ item }: { item: Message }) => {
+    // Ensure user state is accessed safely, especially during initial loads or sign-out
     const isCurrentUserMessage = user ? item.senderUid === user.uid : false;
     const isExpanded = expandedMessages[item.key] || false;
+    // console.log(`Rendering MessageItem: ${item.key}, Sender: ${item.senderName}`); // For debugging re-renders
 
     if (item.type === "receipt" && item.receiptData) {
       return (
         <TouchableOpacity
           activeOpacity={0.9}
-          onPress={() => {
-            setExpandedMessages((prev) => ({
-              ...prev,
-              [item.key]: !prev[item.key],
-            }));
-          }}
+          onPress={() => handleBubblePress(item.key)} // Using memoized handleBubblePress
           onLongPress={(e) => {
             const { pageX, pageY } = e.nativeEvent;
             handleBubbleLongPress(
+              // Using memoized handleBubbleLongPress
               isCurrentUserMessage,
               item.senderUid,
               item.senderName,
@@ -721,7 +938,7 @@ const Chat = () => {
               styles.senderName,
               isCurrentUserMessage
                 ? styles.currentUserSenderName
-                : { color: assignedColors[item.senderName] || "#fff" },
+                : { color: assignedColors[item.senderName] || "#fff" }, // Fallback color
             ]}
           >
             {item.senderName} uploaded a receipt
@@ -733,8 +950,8 @@ const Chat = () => {
             <>
               <Text style={styles.receiptDate}>
                 Date:{" "}
-                {item.receiptData.date
-                  ? new Date(item.receiptData.date).toLocaleString()
+                {item.receiptData.time_and_date // Corrected from item.receiptData.date
+                  ? new Date(item.receiptData.time_and_date).toLocaleString()
                   : "N/A"}
               </Text>
               <Text style={styles.receiptDate}>
@@ -746,7 +963,6 @@ const Chat = () => {
                     const price = rItem.price || 0;
                     const qty = rItem.quantity || 1;
                     const itemTotal = price * qty;
-                    // filter only those buyers who have at least one 'true' in 'selected'
                     const filteredBuyers = (rItem.buyers || []).filter(
                       (b: any) =>
                         Array.isArray(b.selected) &&
@@ -778,15 +994,15 @@ const Chat = () => {
       );
     }
 
-    /* normal text messages */
-    const isExpandedText = expandedMessages[item.key] || false;
+    // Regular text message
     return (
       <TouchableOpacity
         activeOpacity={0.9}
-        onPress={() => handleBubblePress(item.key)}
+        onPress={() => handleBubblePress(item.key)} // Using memoized handleBubblePress
         onLongPress={(e) => {
           const { pageX, pageY } = e.nativeEvent;
           handleBubbleLongPress(
+            // Using memoized handleBubbleLongPress
             isCurrentUserMessage,
             item.senderUid,
             item.senderName,
@@ -808,7 +1024,7 @@ const Chat = () => {
             styles.senderName,
             isCurrentUserMessage
               ? styles.currentUserSenderName
-              : { color: assignedColors[item.senderName] || "#fff" },
+              : { color: assignedColors[item.senderName] || "#fff" }, // Fallback color
           ]}
         >
           {item.senderName}:
@@ -823,7 +1039,7 @@ const Chat = () => {
         >
           {item.text}
         </Text>
-        {isExpandedText && (
+        {isExpanded && ( // Changed from isExpandedText to isExpanded for consistency
           <Text
             style={
               isCurrentUserMessage ? styles.selfTimestamp : styles.timestamp
@@ -835,18 +1051,52 @@ const Chat = () => {
       </TouchableOpacity>
     );
   });
+  MessageItem.displayName = "MessageItem"; // For better debugging
+
+  if (!isSignedIn && initialLoad) {
+    // Show skeleton only on initial load when not signed in
+    return (
+      <View
+        style={[
+          styles.signInMessageContainer,
+          { backgroundColor: theme.offWhite2 },
+        ]}
+      >
+        <ChatSkeleton />
+      </View>
+    );
+  }
+  if (!isSignedIn) {
+    return (
+      <View
+        style={[
+          styles.signInMessageContainer,
+          { backgroundColor: theme.offWhite2 },
+        ]}
+      >
+        <ChatSkeleton />
+      </View>
+    );
+  }
 
   return (
-    <View style={styles.container}>
-      <StatusBar barStyle="light-content" backgroundColor={colors.yuck} />
-
-      {/* header */}
-      <View style={styles.headerContainer}>
+    <View style={[styles.container, { backgroundColor: theme.offWhite2 }]}>
+      <StatusBar
+        barStyle={
+          mode === "dark" || mode === "yuck" || mode === "random"
+            ? "light-content"
+            : "dark-content"
+        }
+      />
+      {/* Header */}
+      <View
+        style={[styles.headerContainer, { backgroundColor: theme.offWhite2 }]}
+      >
         <TouchableOpacity onPress={() => navigation.navigate("Profile")}>
           <FontAwesome
-            name="users"
+            name="users" // Consider a more profile-like icon, e.g., 'user-circle'
             size={26}
-            color={colors.yellow}
+            color={theme.yellow}
             style={styles.icon}
           />
         </TouchableOpacity>
@@ -855,11 +1105,13 @@ const Chat = () => {
           style={styles.headerTitleWrapper}
           onPress={() => setDropdownOpen(true)}
         >
-          <Text style={styles.headerText}>{currentChatName}</Text>
+          <Text style={[styles.headerText, { color: titleBarTextColor }]}>
+            {currentChatName}
+          </Text>
           <FontAwesome
             name="chevron-down"
             size={16}
-            color={colors.yellow}
+            color={theme.yellow}
             style={{ marginLeft: 5 }}
           />
         </TouchableOpacity>
@@ -867,16 +1119,16 @@ const Chat = () => {
         <TouchableOpacity onPress={handleTopRightIconPress}>
           {selectedChat !== "global" ? (
             <FontAwesome
-              name="minus"
+              name="minus-circle" // More indicative for "leave group"
               size={26}
               color="red"
               style={styles.icon}
             />
           ) : (
             <FontAwesome
-              name="plus"
+              name="plus-circle" // More indicative for "create group"
               size={26}
-              color={colors.yellow}
+              color={theme.yellow}
               style={styles.icon}
             />
           )}
@@ -885,13 +1137,313 @@ const Chat = () => {
 
       {selectedChat !== "global" && participantUsernames.length > 0 && (
         <View style={styles.participantList}>
-          <Text style={styles.participantText}>
+          <Text
+            style={styles.participantText}
+            numberOfLines={1}
+            ellipsizeMode="tail"
+          >
             {participantUsernames.join(", ")}
           </Text>
         </View>
       )}
 
-      {/* chat dropdown */}
+      <FlatList
+        ref={flatListRef}
+        data={messages}
+        renderItem={({ item }) => <MessageItem item={item} />}
+        keyExtractor={(item) => `${selectedChat}-${item.key}`} // Key should be unique per item
+        contentContainerStyle={styles.messagesContainer}
+        onScroll={(e) => {
+          const { contentOffset, layoutMeasurement, contentSize } =
+            e.nativeEvent;
+          // A common threshold to show scroll to bottom button is when user is not near the bottom.
+          const isNearBottom =
+            contentOffset.y + layoutMeasurement.height >=
+            contentSize.height - layoutMeasurement.height / 2; // e.g. half screen from bottom
+          setShowScrollDown(
+            !isNearBottom && contentSize.height > layoutMeasurement.height
+          ); // Only show if scrollable
+        }}
+        scrollEventThrottle={150} // Adjusted throttle
+        onContentSizeChange={() => {
+          // Scroll to end only if user was already near the bottom or it's an initial load of messages
+          if (!showScrollDown && flatListRef.current) {
+            flatListRef.current.scrollToEnd({ animated: true });
+          }
+        }}
+        // OPTIMIZATION: Add FlatList performance props
+        initialNumToRender={15} // Render 15 items initially
+        maxToRenderPerBatch={10} // Render 10 items per batch during scroll
+        windowSize={10} // Virtualization window size (items above/below viewport)
+        // For getItemLayout, you need to know the height of your items.
+        // If heights are variable, this is harder. If they are mostly fixed, it helps a lot.
+        // Example (if all items were, say, 70 pixels high):
+        // getItemLayout={(data, index) => (
+        //   {length: 70, offset: 70 * index, index}
+        // )}
+        ListEmptyComponent={
+          !initialLoad && messages.length === 0 ? ( // Show only after initial load attempt and if messages are empty
+            <View style={styles.centeredMessage}>
+              <Text style={{ color: titleBarTextColor, fontSize: 16 }}>
+                No messages yet. Start the conversation!
+              </Text>
+            </View>
+          ) : null
+        }
+      />
+
+      {showScrollDown && (
+        <TouchableOpacity
+          style={styles.scrollToBottomButton}
+          onPress={() => flatListRef.current?.scrollToEnd({ animated: true })}
+        >
+          <FontAwesome name="chevron-down" size={22} color="#FFF" />
+        </TouchableOpacity>
+      )}
+
+      {(cooldownMessage || reportConfirmation) && (
+        <View style={styles.cooldownPopup}>
+          <Text style={styles.cooldownText}>
+            {cooldownMessage || reportConfirmation}
+          </Text>
+        </View>
+      )}
+
+      <KeyboardAvoidingView
+        behavior={Platform.OS === "ios" ? "padding" : undefined} // 'height' can sometimes cause issues
+        keyboardVerticalOffset={Platform.OS === "ios" ? 60 : 0} // Adjust as needed
+      >
+        <View style={styles.inputArea}>
+          {selectedChat !== "global" && (
+            <TouchableOpacity
+              onPress={handleUploadReceipt}
+              style={styles.receiptIcon}
+            >
+              <FontAwesome name="file-text-o" size={24} color={theme.yellow} />
+            </TouchableOpacity>
+          )}
+          <TextInput
+            style={styles.input}
+            placeholder="Type a message..."
+            placeholderTextColor="#ccc"
+            value={newMessageText}
+            onChangeText={setNewMessageText}
+            onSubmitEditing={handleSendMessage} // Usually for hardware keyboards
+            returnKeyType="send"
+            blurOnSubmit={false} // Keep keyboard open after send if desired, or true to close
+            // multiline // If you want multiline input
+          />
+          <Pressable
+            style={styles.sendButton}
+            onPress={handleSendMessage}
+            disabled={!newMessageText.trim()}
+          >
+            <Text style={styles.sendButtonText}>Send</Text>
+          </Pressable>
+        </View>
+      </KeyboardAvoidingView>
+
+      {/* Popup modal for message actions */}
+      <Modal
+        visible={popupVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setPopupVisible(false)}
+      >
+        <TouchableWithoutFeedback onPress={() => setPopupVisible(false)}>
+          <View style={styles.modalOverlay} />
+        </TouchableWithoutFeedback>
+        {popupVisible &&
+          longPressedMessage && ( // Ensure longPressedMessage is not null
+            <Animated.View // Consider removing Animated.View if not using animations here, or implement them
+              style={[
+                styles.popupContainer,
+                {
+                  top: popupY,
+                  left: Math.min(
+                    popupX,
+                    Dimensions.get("window").width -
+                      (styles.popupContainer.width || 180) -
+                      10
+                  ), // ensure it stays on screen
+                },
+              ]}
+            >
+              {longPressedMessage.type !== "receipt" && (
+                <>
+                  <TouchableOpacity
+                    onPress={handleCopyMessage}
+                    style={styles.popupItem}
+                  >
+                    <View style={styles.popupItemContent}>
+                      <Icon
+                        name="copy"
+                        size={18}
+                        color="#fff"
+                        style={styles.popupIcon}
+                      />
+                      <Text style={styles.popupText}>Copy</Text>
+                    </View>
+                  </TouchableOpacity>
+                  <View style={styles.popupDivider} />
+                </>
+              )}
+
+              {!isTargetFriend ? (
+                <TouchableOpacity
+                  onPress={handleAddFriend}
+                  style={styles.popupItem}
+                >
+                  <View style={styles.popupItemContent}>
+                    <Icon
+                      name="user-plus"
+                      size={18}
+                      color="#fff"
+                      style={styles.popupIcon}
+                    />
+                    <Text style={styles.popupText}>Add Friend</Text>
+                  </View>
+                </TouchableOpacity>
+              ) : (
+                <TouchableOpacity
+                  onPress={confirmRemoveFriend}
+                  style={styles.popupItem}
+                >
+                  <View style={styles.popupItemContent}>
+                    <Icon
+                      name="user-x"
+                      size={18}
+                      color="red"
+                      style={styles.popupIcon}
+                    />
+                    <Text style={styles.popupText}>Remove Friend</Text>
+                  </View>
+                </TouchableOpacity>
+              )}
+              <View style={styles.popupDivider} />
+              <TouchableOpacity
+                onPress={handleMessage}
+                style={styles.popupItem}
+              >
+                <View style={styles.popupItemContent}>
+                  <Icon
+                    name="message-circle"
+                    size={18}
+                    color="#fff"
+                    style={styles.popupIcon}
+                  />
+                  <Text style={styles.popupText}>Message</Text>
+                </View>
+              </TouchableOpacity>
+
+              {selectedChat === "global" &&
+                popupTargetUid &&
+                popupTargetUid !== user?.uid && (
+                  <>
+                    <View style={styles.popupDivider} />
+                    <TouchableOpacity
+                      onPress={handleOpenReportModal}
+                      style={styles.popupItem}
+                    >
+                      <View style={styles.popupItemContent}>
+                        <Icon
+                          name="alert-triangle"
+                          size={18}
+                          color={"red"}
+                          style={styles.popupIcon}
+                        />
+                        <Text style={[styles.popupText, { color: "red" }]}>
+                          Report User
+                        </Text>
+                      </View>
+                    </TouchableOpacity>
+                  </>
+                )}
+              {longPressedMessage.type === "receipt" && (
+                <>
+                  <View style={styles.popupDivider} />
+                  <TouchableOpacity
+                    onPress={handleImportReceipt}
+                    style={styles.popupItem}
+                  >
+                    <View style={styles.popupItemContent}>
+                      <Icon
+                        name="download-cloud"
+                        size={18}
+                        color="#fff"
+                        style={styles.popupIcon}
+                      />
+                      <Text style={styles.popupText}>Import Receipt</Text>
+                    </View>
+                  </TouchableOpacity>
+                </>
+              )}
+            </Animated.View>
+          )}
+      </Modal>
+
+      {/* Report Modal */}
+      <Modal
+        visible={isReportModalVisible}
+        transparent
+        animationType="slide"
+        onRequestClose={handleCloseReportModal}
+      >
+        <KeyboardAvoidingView
+          behavior={Platform.OS === "ios" ? "padding" : "height"}
+          style={styles.reportModalKeyboardAvoidingView}
+          keyboardVerticalOffset={Platform.OS === "ios" ? 20 : 0}
+        >
+          <TouchableWithoutFeedback onPress={handleCloseReportModal}>
+            <View style={styles.modalOverlay} />
+          </TouchableWithoutFeedback>
+          <View style={styles.reportModalContainer}>
+            <Text style={styles.reportModalTitle}>
+              Report {popupTargetName || "User"}
+            </Text>
+            <Text style={styles.reportInputLabel}>
+              Why are you reporting this player?
+            </Text>
+            <TextInput
+              style={styles.reportInput}
+              placeholder="e.g., Spamming, Harassment, etc."
+              placeholderTextColor="#999"
+              value={reportReason}
+              onChangeText={setReportReason}
+              multiline
+            />
+            <Text style={styles.reportInputLabel}>
+              Additional Information (optional):
+            </Text>
+            <TextInput
+              style={[styles.reportInput, styles.reportInputMulti]}
+              placeholder="Provide any extra details or context."
+              placeholderTextColor="#999"
+              value={reportAdditionalInfo}
+              onChangeText={setReportAdditionalInfo}
+              multiline
+              numberOfLines={4}
+            />
+            <View style={styles.reportActionsContainer}>
+              <TouchableOpacity
+                style={[styles.reportButton, styles.reportCancelButton]}
+                onPress={handleCloseReportModal}
+              >
+                <Text style={styles.reportButtonText}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.reportButton, styles.reportSubmitButton]}
+                onPress={handleSubmitReport}
+                disabled={!reportReason.trim()} // Disable if no reason
+              >
+                <Text style={styles.reportButtonText}>Submit Report</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </KeyboardAvoidingView>
+      </Modal>
+
+      {/* Chat Selection Dropdown Modal */}
       <Modal
         transparent
         visible={dropdownOpen}
@@ -913,7 +1465,7 @@ const Chat = () => {
               <FontAwesome
                 name="globe"
                 size={16}
-                color={colors.yellow}
+                color={theme.yellow}
                 style={styles.dropdownIcon}
               />
               <Text style={[styles.dropdownItemText, styles.globalChatText]}>
@@ -944,168 +1496,35 @@ const Chat = () => {
           </View>
         </View>
       </Modal>
-
-      {/* message list */}
-      <FlatList
-        data={messages}
-        renderItem={({ item }) => <MessageItem item={item} />}
-        keyExtractor={(item) => item.key}
-        contentContainerStyle={styles.messagesContainer}
-        removeClippedSubviews
-        windowSize={5}
-      />
-
-      {/* input row */}
-      <View style={styles.inputArea}>
-        {selectedChat !== "global" && (
-          <TouchableOpacity
-            onPress={handleUploadReceipt}
-            style={styles.receiptIcon}
-          >
-            <FontAwesome name="file-text-o" size={24} color={colors.yellow} />
-          </TouchableOpacity>
-        )}
-        <TextInput
-          style={styles.input}
-          placeholder="Type a message..."
-          placeholderTextColor="#ccc"
-          value={newMessageText}
-          onChangeText={setNewMessageText}
-          onSubmitEditing={handleSendMessage}
-          returnKeyType="send"
-        />
-        <Pressable style={styles.sendButton} onPress={handleSendMessage}>
-          <Text style={styles.sendButtonText}>Send</Text>
-        </Pressable>
-      </View>
-
-      {/* popup menu */}
-      <Modal visible={popupVisible} transparent animationType="fade">
-        <TouchableWithoutFeedback onPress={() => setPopupVisible(false)}>
-          <View style={styles.modalOverlay} />
-        </TouchableWithoutFeedback>
-        {popupVisible && (
-          <Animated.View
-            style={[
-              styles.popupContainer,
-              {
-                top: popupY,
-                left: Math.min(popupX, Dimensions.get("window").width - 180),
-              },
-            ]}
-          >
-            {isTargetFriend ? (
-              <TouchableOpacity
-                onPress={confirmRemoveFriend}
-                style={styles.popupItem}
-              >
-                <View style={styles.popupItemContent}>
-                  <Icon
-                    name="user-minus"
-                    size={18}
-                    color="#FF5252"
-                    style={styles.popupIcon}
-                  />
-                  <Text style={[styles.popupText, { color: "#FF5252" }]}>
-                    Remove Friend
-                  </Text>
-                </View>
-              </TouchableOpacity>
-            ) : (
-              <TouchableOpacity
-                onPress={handleAddFriend}
-                style={styles.popupItem}
-              >
-                <View style={styles.popupItemContent}>
-                  <Icon
-                    name="user-plus"
-                    size={18}
-                    color={colors.yellow}
-                    style={styles.popupIcon}
-                  />
-                  <Text style={[styles.popupText, { color: colors.yellow }]}>
-                    Add Friend
-                  </Text>
-                </View>
-              </TouchableOpacity>
-            )}
-            <View style={styles.popupDivider} />
-            <TouchableOpacity onPress={handleMessage} style={styles.popupItem}>
-              <View style={styles.popupItemContent}>
-                <Icon
-                  name="message-circle"
-                  size={18}
-                  color="#fff"
-                  style={styles.popupIcon}
-                />
-                <Text style={styles.popupText}>Message</Text>
-              </View>
-            </TouchableOpacity>
-            {selectedChat !== "global" &&
-              longPressedMessage?.type === "receipt" && (
-                <>
-                  <View style={styles.popupDivider} />
-                  <TouchableOpacity
-                    onPress={handleImportReceipt}
-                    style={styles.popupItem}
-                  >
-                    <View style={styles.popupItemContent}>
-                      <Icon
-                        name="download"
-                        size={18}
-                        color="white"
-                        style={styles.popupIcon}
-                      />
-                      <Text style={styles.popupText}>Import Receipt</Text>
-                    </View>
-                  </TouchableOpacity>
-                </>
-              )}
-            {longPressedMessage?.type !== "receipt" && (
-              <>
-                <View style={styles.popupDivider} />
-                <TouchableOpacity
-                  onPress={handleCopyMessage}
-                  style={styles.popupItem}
-                >
-                  <View style={styles.popupItemContent}>
-                    <Icon
-                      name="copy"
-                      size={18}
-                      color="#fff"
-                      style={styles.popupIcon}
-                    />
-                    <Text style={styles.popupText}>Copy</Text>
-                  </View>
-                </TouchableOpacity>
-              </>
-            )}
-          </Animated.View>
-        )}
-      </Modal>
     </View>
   );
 };
 
 export default Chat;
 
-/* styles in lowercase */
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: colors.yuck,
+  },
+  centeredMessage: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+    padding: 20,
   },
   headerContainer: {
     flexDirection: "row",
     alignItems: "center",
     paddingHorizontal: 10,
     paddingVertical: 15,
-    backgroundColor: colors.yuck,
+    // backgroundColor: 'white', // Set by theme
     shadowColor: "#000",
     shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.3,
-    shadowRadius: 3,
-    elevation: 4,
+    shadowOpacity: 0.1, // Reduced opacity
+    shadowRadius: 2, // Reduced radius
+    elevation: 3, // Reduced elevation
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: "#ccc", // Softer border
   },
   headerTitleWrapper: {
     flex: 1,
@@ -1114,7 +1533,6 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   headerText: {
-    color: "white",
     fontSize: 20,
     fontWeight: "bold",
   },
@@ -1122,40 +1540,62 @@ const styles = StyleSheet.create({
     marginHorizontal: 10,
   },
   participantList: {
-    backgroundColor: "#193f54",
-    paddingHorizontal: 10,
-    paddingVertical: 5,
+    backgroundColor: "#193f54", // Consider theme variable
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: "#0a2f44", // Darker border for contrast
   },
   participantText: {
-    color: "#ddd",
+    color: "#ddd", // Consider theme variable
     fontSize: 12,
   },
   messagesContainer: {
-    paddingVertical: 15,
+    paddingVertical: 10, // Reduced padding
     paddingHorizontal: 10,
+    flexGrow: 1, // Ensure it can grow
   },
   messageBubble: {
-    padding: 10,
-    borderRadius: 10,
+    paddingVertical: 8, // Fine-tuned padding
+    paddingHorizontal: 12,
+    borderRadius: 15, // Slightly more rounded
     marginBottom: 8,
+    elevation: 1, // Subtle shadow for bubbles
   },
   currentUserMessage: {
-    backgroundColor: colors.yellow,
+    backgroundColor: colors.yellow, // From theme
     alignSelf: "flex-end",
+    borderTopRightRadius: 5, // Differentiates current user bubble
   },
   otherUserMessage: {
-    backgroundColor: "#0C3A50",
+    backgroundColor: "#0C3A50", // Consider theme variable
     alignSelf: "flex-start",
+    borderTopLeftRadius: 5, // Differentiates other user bubble
+  },
+  scrollToBottomButton: {
+    position: "absolute",
+    right: 20,
+    bottom: 80, // Ensure it's above input area
+    backgroundColor: "rgba(0, 0, 0, 0.6)",
+    width: 44, // Touch target size
+    height: 44, // Touch target size
+    borderRadius: 22, // Circular
+    justifyContent: "center",
+    alignItems: "center",
+    zIndex: 999,
+    elevation: 5,
   },
   senderName: {
     fontWeight: "bold",
-    marginBottom: 3,
+    marginBottom: 4, // Increased spacing
+    fontSize: 13, // Slightly smaller sender name
   },
   currentUserSenderName: {
     color: "black",
   },
   messageText: {
-    fontSize: 16,
+    fontSize: 15, // Slightly smaller message text for more content
+    lineHeight: 20, // Improved readability
   },
   currentUserText: {
     color: "black",
@@ -1164,42 +1604,66 @@ const styles = StyleSheet.create({
     color: "white",
   },
   timestamp: {
-    marginTop: 5,
-    fontSize: 12,
-    color: "#ccc",
+    marginTop: 6, // Increased spacing
+    fontSize: 11, // Smaller timestamp
+    color: "#bbb", // Lighter color
+    alignSelf: "flex-start",
   },
   selfTimestamp: {
-    marginTop: 5,
-    fontSize: 12,
-    color: "#333",
+    marginTop: 6,
+    fontSize: 11,
+    color: "#555", // Darker for better contrast on light bubble
+    alignSelf: "flex-end",
+  },
+  cooldownPopup: {
+    position: "absolute",
+    bottom: 75, // Ensure above input
+    left: 10,
+    right: 10,
+    backgroundColor: "rgba(0, 0, 0, 0.85)",
+    padding: 12,
+    borderRadius: 8,
+    alignItems: "center",
+    zIndex: 1000,
+    elevation: 6,
+  },
+  cooldownText: {
+    color: "white",
+    fontSize: 14,
+    fontWeight: "bold",
+    textAlign: "center",
   },
   inputArea: {
     flexDirection: "row",
     padding: 10,
     borderTopWidth: 1,
-    borderTopColor: colors.yellow,
+    borderTopColor: colors.yellow, // From theme
     alignItems: "center",
+    backgroundColor: "#104050", // Darker background for input area
   },
   receiptIcon: {
-    padding: 5,
+    padding: 8, // Increased touch area
     marginRight: 8,
   },
   input: {
     flex: 1,
-    paddingVertical: 8,
-    paddingHorizontal: 12,
-    borderRadius: 20,
-    backgroundColor: "#114B68",
+    paddingVertical: 10, // Increased padding
+    paddingHorizontal: 15,
+    borderRadius: 25, // More rounded
+    backgroundColor: "#2a3b4c", // Darker input field
     marginRight: 8,
-    borderColor: colors.yellow,
-    borderWidth: 1,
+    // borderColor: colors.yellow, // Border can be subtle
+    // borderWidth: 1,
     color: "white",
+    fontSize: 16,
   },
   sendButton: {
     paddingVertical: 10,
-    paddingHorizontal: 16,
-    backgroundColor: colors.yellow,
-    borderRadius: 20,
+    paddingHorizontal: 18, // Wider button
+    backgroundColor: colors.yellow, // From theme
+    borderRadius: 25, // Match input
+    justifyContent: "center",
+    alignItems: "center",
   },
   sendButtonText: {
     color: "black",
@@ -1208,14 +1672,21 @@ const styles = StyleSheet.create({
   },
   dropdownPanel: {
     position: "absolute",
-    top: 70,
+    top:
+      Platform.OS === "ios"
+        ? Dimensions.get("window").height > 800
+          ? 90
+          : 75
+        : 65, // Adjust based on header height & notch
     left: 0,
     right: 0,
     alignItems: "center",
+    paddingHorizontal: 20, // Give some space from screen edges
   },
   dropdownContainer: {
-    width: "80%",
-    backgroundColor: "#114B68",
+    width: "90%", // Max width
+    maxWidth: 350, // Cap width on larger screens
+    backgroundColor: "#114B68", // Consider theme variable
     borderRadius: 12,
     paddingVertical: 8,
     shadowColor: "#000",
@@ -1228,7 +1699,7 @@ const styles = StyleSheet.create({
   },
   dropdownItem: {
     paddingHorizontal: 16,
-    paddingVertical: 12,
+    paddingVertical: 14, // Increased padding
     flexDirection: "row",
     alignItems: "center",
     marginVertical: 2,
@@ -1239,12 +1710,12 @@ const styles = StyleSheet.create({
     fontWeight: "500",
   },
   globalChatItem: {
-    backgroundColor: "rgba(243, 210, 90, 0.15)",
+    backgroundColor: "rgba(243, 210, 90, 0.15)", // Theme color with alpha
     borderRadius: 8,
     marginHorizontal: 8,
   },
   globalChatText: {
-    color: colors.yellow,
+    color: colors.yellow, // From theme
     fontWeight: "bold",
   },
   dropdownIcon: {
@@ -1258,30 +1729,32 @@ const styles = StyleSheet.create({
   },
   signInMessageContainer: {
     flex: 1,
+    // backgroundColor is set by theme
   },
   modalOverlay: {
     flex: 1,
-    backgroundColor: "rgba(0, 0, 0, 0.6)", // Darker, more modern overlay
+    backgroundColor: "rgba(0, 0, 0, 0.6)",
   },
   popupContainer: {
     position: "absolute",
-    width: 180,
-    backgroundColor: "#1E2A38", // Darker, more modern blue
+    width: 200, // Increased width for more options
+    backgroundColor: "#1E2A38", // Darker, more modern
     borderRadius: 12,
-    padding: 6,
+    padding: 8, // Adjusted padding
     zIndex: 999,
     shadowColor: "#000",
     shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-    elevation: 8,
+    shadowOpacity: 0.4, // Slightly stronger shadow
+    shadowRadius: 10,
+    elevation: 10,
     borderWidth: 1,
-    borderColor: "rgba(255, 255, 255, 0.1)",
+    borderColor: "rgba(255, 255, 255, 0.15)", // Slightly more visible border
   },
   popupItem: {
-    paddingVertical: 10,
+    paddingVertical: 12, // Increased touch area
     paddingHorizontal: 12,
     borderRadius: 8,
+    // backgroundColor: 'transparent', // Allow hover/active effect if added later
   },
   popupItemContent: {
     flexDirection: "row",
@@ -1296,47 +1769,126 @@ const styles = StyleSheet.create({
     fontWeight: "500",
   },
   popupDivider: {
-    height: 1,
-    backgroundColor: "rgba(255, 255, 255, 0.1)",
-    marginVertical: 5,
-    marginHorizontal: 2,
+    height: StyleSheet.hairlineWidth, // Thinner divider
+    backgroundColor: "rgba(255, 255, 255, 0.2)", // More visible
+    marginVertical: 6, // Adjusted spacing
+    marginHorizontal: 4,
   },
   receiptBubble: {
-    backgroundColor: "#194D33",
+    backgroundColor: "#194D33", // Consider theme variable
+    // alignSelf is set based on user
   },
   currentUserReceipt: {
     alignSelf: "flex-end",
+    borderTopRightRadius: 5,
   },
   otherUserReceipt: {
     alignSelf: "flex-start",
+    borderTopLeftRadius: 5,
   },
   receiptTitle: {
     fontWeight: "bold",
     color: "#fff",
     marginVertical: 4,
+    fontSize: 15,
   },
   receiptDate: {
     color: "#ddd",
     marginVertical: 2,
+    fontSize: 12,
   },
   receiptItemsContainer: {
-    marginTop: 5,
-    marginBottom: 5,
+    marginTop: 6,
+    marginBottom: 6,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: "rgba(255,255,255,0.2)",
+    paddingTop: 6,
   },
   receiptItemRow: {
-    marginBottom: 4,
+    marginBottom: 5,
   },
   receiptItemText: {
     color: "#fff",
+    fontSize: 13,
   },
   receiptItemBuyers: {
     color: "#ccc",
-    fontSize: 12,
+    fontSize: 11,
     marginLeft: 10,
+    fontStyle: "italic",
   },
   receiptTimestamp: {
-    marginTop: 5,
-    fontSize: 12,
+    marginTop: 8,
+    fontSize: 11,
     color: "#ccc",
+    alignSelf: "flex-start", // Or flex-end based on user
+  },
+  reportModalKeyboardAvoidingView: {
+    flex: 1,
+    justifyContent: "flex-end",
+  },
+  reportModalContainer: {
+    backgroundColor: "#1E2A38",
+    padding: 20,
+    paddingBottom: Platform.OS === "ios" ? 30 : 20, // Extra padding for home indicator
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: -2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 4,
+    elevation: 5,
+  },
+  reportModalTitle: {
+    fontSize: 20,
+    fontWeight: "bold",
+    color: "#fff",
+    marginBottom: 20, // Increased margin
+    textAlign: "center",
+  },
+  reportInputLabel: {
+    fontSize: 14,
+    color: "#ccc",
+    marginBottom: 8, // Increased margin
+    marginTop: 10,
+  },
+  reportInput: {
+    backgroundColor: "#2a3b4c",
+    color: "#fff",
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    fontSize: 16,
+    minHeight: 50,
+    textAlignVertical: "top",
+    borderColor: "#455a64",
+    borderWidth: 1,
+    marginBottom: 15,
+  },
+  reportInputMulti: {
+    minHeight: 100,
+  },
+  reportActionsContainer: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    marginTop: 20,
+  },
+  reportButton: {
+    flex: 1,
+    paddingVertical: 14, // Increased padding
+    borderRadius: 8,
+    alignItems: "center",
+    marginHorizontal: 5,
+  },
+  reportCancelButton: {
+    backgroundColor: "#4F5D75",
+  },
+  reportSubmitButton: {
+    backgroundColor: "red",
+  },
+  reportButtonText: {
+    color: "#fff",
+    fontSize: 16,
+    fontWeight: "bold",
   },
 });
